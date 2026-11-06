@@ -1,6 +1,12 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
+// Represents the configuration for the application, including profiles.
+#[derive(Deserialize)]
+pub(crate) struct Config {
+    pub(crate) profiles: std::collections::BTreeMap<String, Profile>,
+}
+
 // Configuration structure for the application.
 impl Config {
     // Validates the configuration, ensuring that profiles using API authentication
@@ -25,7 +31,12 @@ impl Config {
     // Loads the configuration from a TOML file at the specified path.
     pub(crate) fn load(path: &std::path::Path) -> anyhow::Result<Self> {
         let config_str = std::fs::read_to_string(path)?;
-        let config: Config = toml::from_str(&config_str)?;
+        Self::parse(&config_str)
+    }
+
+    // Parses the configuration from a TOML string.
+    fn parse(input: &str) -> anyhow::Result<Self> {
+        let config: Self = toml::from_str(input)?;
         config.validate()?;
         Ok(config)
     }
@@ -34,12 +45,6 @@ impl Config {
     pub(crate) fn get_profile(&self, name: &str) -> Option<&Profile> {
         self.profiles.get(name)
     }
-}
-
-// Represents the configuration for the application, including profiles.
-#[derive(Deserialize)]
-pub(crate) struct Config {
-    pub(crate) profiles: std::collections::BTreeMap<String, Profile>,
 }
 
 // Represents a profile in the configuration, including agent,
@@ -65,4 +70,54 @@ pub(crate) enum Agent {
 pub(crate) enum AuthMode {
     Subscription,
     Api,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Agent, AuthMode, Config};
+
+    #[test]
+    fn parses_named_profiles() -> anyhow::Result<()> {
+        let config = Config::parse(
+            r#"
+[profiles.personal]
+agent = "claude-code"
+auth = "subscription"
+
+[profiles.work]
+agent = "codex"
+auth = "api"
+api_key_env = "CODEX_WORK_KEY"
+"#,
+        )?;
+
+        let personal = config.get_profile("personal").expect("personal profile");
+        assert!(matches!(personal.agent, Agent::ClaudeCode));
+        assert_eq!(personal.auth, AuthMode::Subscription);
+        assert!(personal.api_key_env.is_none());
+
+        let work = config.get_profile("work").expect("work profile");
+        assert!(matches!(work.agent, Agent::Codex));
+        assert_eq!(work.auth, AuthMode::Api);
+        assert_eq!(work.api_key_env.as_deref(), Some("CODEX_WORK_KEY"));
+        assert!(config.get_profile("missing").is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_api_profiles_without_a_key_env_name() {
+        let profile = "[profiles.work]\nagent = 'codex'\nauth = 'api'\n";
+
+        for field in ["", "api_key_env = ''", "api_key_env = '   '"] {
+            let Err(error) = Config::parse(&format!("{profile}{field}")) else {
+                panic!("accepted API profile with api_key_env input {field:?}");
+            };
+            assert!(error.to_string().contains("Profile 'work'"), "{error}");
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_toml() {
+        assert!(Config::parse("[profiles.work").is_err());
+    }
 }
