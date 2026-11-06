@@ -1,0 +1,16 @@
+# Rust and Cargo
+/target/
+/debug/
+*.rs.bk
+*.dSYM/
+rustc-ice-*.txt
+/.cargo/credentials
+/.cargo/credentials.toml
+
+# macOS
+.DS_Store
+.localized
+.AppleDouble
+.LSOverride
+._*
+__MACOSX/
