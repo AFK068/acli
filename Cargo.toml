@@ -6,11 +6,15 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-dialoguer = { version = "0.12", default-features = false }
+dialoguer = { version = "0.12", default-features = false, features = ["password"] }
 directories = "6"
+keyring = "4.2"
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 serde = { version = "1", features = ["derive"] }
 tempfile = "3"
 toml = "0.8"
 toml_edit = "0.22"
 uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+keyring-core = "1"

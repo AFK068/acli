@@ -1,7 +1,9 @@
 mod agents;
 mod cli;
 mod config;
+mod credentials;
 mod launch;
+mod profiles;
 
 use clap::Parser;
 

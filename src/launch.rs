@@ -13,16 +13,16 @@ pub(crate) fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {
     let key = match profile.auth {
         AuthMode::Subscription => None,
         AuthMode::Api => {
-            let variable = profile
-                .api_key_env
-                .as_deref()
-                .context("Missing API key variable name")?;
-            let key = std::env::var(variable).map_err(|_| {
-                anyhow::anyhow!("Set environment variable '{variable}' for profile '{name}'")
-            })?;
+            let key = match &profile.api_key_env {
+                Some(variable) => std::env::var(variable).map_err(|_| {
+                    anyhow::anyhow!("Set environment variable '{variable}' for profile '{name}'")
+                })?,
+                None => crate::credentials::load(profile.id)
+                    .with_context(|| format!("Could not load API key for profile '{name}'"))?,
+            };
             anyhow::ensure!(
                 !key.trim().is_empty(),
-                "Environment variable '{variable}' is empty"
+                "API key for profile '{name}' is empty"
             );
             Some(key)
         }

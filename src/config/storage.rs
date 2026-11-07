@@ -333,7 +333,7 @@ mod tests {
             add_profile(
                 &missing,
                 "new",
-                Profile::new(Agent::Codex, AuthMode::Api, None)
+                Profile::new(Agent::Codex, AuthMode::Api, Some(" ".into()))
             )
             .is_err()
         );

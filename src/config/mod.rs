@@ -46,6 +46,7 @@ pub(crate) struct Profile {
     pub(crate) id: uuid::Uuid,
     pub(crate) agent: Agent,
     pub(crate) auth: AuthMode,
+    // API profiles without this field use the system credential store.
     pub(crate) api_key_env: Option<String>,
 }
 
@@ -59,13 +60,14 @@ impl Profile {
         }
     }
 
-    fn validate(&self, name: &str) -> anyhow::Result<()> {
+    pub(crate) fn validate(&self, name: &str) -> anyhow::Result<()> {
         anyhow::ensure!(!self.id.is_nil(), "Profile '{name}' has an empty ID");
-        let key_env = self.api_key_env.as_deref().unwrap_or("").trim();
-        anyhow::ensure!(
-            self.auth != AuthMode::Api || !key_env.is_empty(),
-            "Profile '{name}' uses API auth mode but does not specify an API key environment variable."
-        );
+        if let (AuthMode::Api, Some(variable)) = (&self.auth, &self.api_key_env) {
+            anyhow::ensure!(
+                !variable.trim().is_empty(),
+                "Profile '{name}' has an empty API key environment variable name"
+            );
+        }
         Ok(())
     }
 }
@@ -156,12 +158,17 @@ api_key_env = "CODEX_WORK_KEY"
     }
 
     #[test]
-    fn rejects_api_profiles_without_a_key_env_name() {
-        for key_env in [None, Some(""), Some("   ")] {
-            let profile = Profile::new(Agent::Codex, AuthMode::Api, key_env.map(str::to_owned));
+    fn rejects_empty_api_key_env_names() {
+        for key_env in ["", "   "] {
+            let profile = Profile::new(Agent::Codex, AuthMode::Api, Some(key_env.into()));
             let error = profile.validate("work").unwrap_err();
             assert!(error.to_string().contains("Profile 'work'"), "{error}");
         }
+    }
+
+    #[test]
+    fn accepts_api_profile_with_system_credentials() -> anyhow::Result<()> {
+        Profile::new(Agent::Codex, AuthMode::Api, None).validate("work")
     }
 
     #[test]

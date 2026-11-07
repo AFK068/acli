@@ -1,4 +1,5 @@
-use crate::config::{Agent, AuthMode, Profile, storage};
+use crate::config::{Agent, AuthMode, Profile};
+use crate::profiles;
 use std::io::IsTerminal;
 
 pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
@@ -6,7 +7,7 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
         std::io::stdin().is_terminal() && std::io::stderr().is_terminal(),
         "Run 'acli profile add' in an interactive terminal"
     );
-    let config = storage::load(path)?;
+    let config = profiles::load(path)?;
     let theme = dialoguer::theme::ColorfulTheme::default();
 
     let name: String = dialoguer::Input::with_theme(&theme)
@@ -31,31 +32,31 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
         _ => AuthMode::Api,
     };
 
-    let api_key_env = if auth == AuthMode::Api {
-        Some(ask_key_env()?)
+    let key = if auth == AuthMode::Api {
+        Some(ask_key()?)
     } else {
         None
     };
 
-    let profile = Profile::new(agent, auth, api_key_env);
-    storage::add_profile(path, name, profile)?;
+    let profile = Profile::new(agent, auth, None);
+    profiles::add(path, name, profile, key.as_deref())?;
     println!("Profile '{name}' saved to {}", path.display());
     Ok(())
 }
 
-fn ask_key_env() -> anyhow::Result<String> {
+fn ask_key() -> anyhow::Result<String> {
     let theme = dialoguer::theme::ColorfulTheme::default();
-    let name: String = dialoguer::Input::with_theme(&theme)
-        .with_prompt("API key environment variable name (not the key)")
-        .validate_with(|name: &String| {
-            if name.trim().is_empty() {
-                Err("Variable name must not be empty")
+    dialoguer::Password::with_theme(&theme)
+        .with_prompt("API key (saved in the system credential store)")
+        .validate_with(|key: &String| {
+            if key.trim().is_empty() {
+                Err("API key must not be empty")
             } else {
                 Ok(())
             }
         })
-        .interact_text()?;
-    Ok(name.trim().to_owned())
+        .interact()
+        .map_err(Into::into)
 }
 
 fn select(prompt: &str, options: &[&str]) -> anyhow::Result<Option<usize>> {
