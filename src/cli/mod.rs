@@ -1,9 +1,8 @@
-use crate::config::Config;
 use clap::{Parser, Subcommand};
 
-mod profiles;
+mod add_profile;
+mod list_profiles;
 
-// Defines the structure of the command-line interface (CLI) using the `clap` crate.
 #[derive(Parser)]
 #[command(version, about = "A hub for terminal coding agents")]
 pub(crate) struct Cli {
@@ -11,21 +10,26 @@ pub(crate) struct Cli {
     command: Command,
 }
 
-// Implements the execution logic for the CLI commands.
 impl Cli {
-    // Executes the command specified in the CLI arguments.
-    pub(crate) fn execute(&self, config: &Config) -> anyhow::Result<()> {
+    pub(crate) fn execute(&self, path: &std::path::Path) -> anyhow::Result<()> {
         match &self.command {
-            Command::List => profiles::print(config)?,
+            Command::List => list_profiles::run(path),
+            Command::Profile(ProfileCommand::Add) => add_profile::run(path),
         }
-
-        Ok(())
     }
 }
 
-// Defines the available commands for the CLI.
 #[derive(Subcommand)]
 enum Command {
     /// List configured profiles.
     List,
+    /// Manage agent profiles.
+    #[command(subcommand)]
+    Profile(ProfileCommand),
+}
+
+#[derive(Subcommand)]
+enum ProfileCommand {
+    /// Add a profile interactively.
+    Add,
 }

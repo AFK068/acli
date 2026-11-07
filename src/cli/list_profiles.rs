@@ -1,12 +1,20 @@
-use crate::config::{AuthMode, Config, Profile};
+use crate::config::{AuthMode, Config, Profile, storage};
 use ratatui::{style::Stylize, widgets::Widget};
 use std::io::{self, IsTerminal, Write};
 
 const TABLE_WIDTH: u16 = 88;
 const ROWS_PER_BLOCK: usize = 128;
 
-// Prints the configured profiles to the terminal, either in a table format or as plain text if the output is not a terminal.
-pub(super) fn print(config: &Config) -> io::Result<()> {
+pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
+    let config = storage::load(path)?;
+    print(&config)?;
+    if config.profiles.is_empty() {
+        eprintln!("Add your first profile with: acli profile add");
+    }
+    Ok(())
+}
+
+fn print(config: &Config) -> io::Result<()> {
     let mut output = io::stdout().lock();
 
     if !output.is_terminal() {
@@ -30,7 +38,6 @@ pub(super) fn print(config: &Config) -> io::Result<()> {
     ratatui::backend::Backend::flush(terminal.backend_mut())
 }
 
-// Renders the profiles in a table format, handling both empty and non-empty profile lists.
 fn render<B: ratatui::backend::Backend>(
     terminal: &mut ratatui::Terminal<B>,
     config: &Config,
@@ -59,15 +66,14 @@ fn render<B: ratatui::backend::Backend>(
         let rows = chunk
             .iter()
             .map(|(name, profile)| profile_row(name, profile));
-        let table =
-            ratatui::widgets::Table::new(rows, [3, 3, 2].map(ratatui::layout::Constraint::Fill))
-                .header(
-                    ratatui::widgets::Row::new(["PROFILE", "AGENT", "AUTH"])
-                        .bold()
-                        .bottom_margin(1),
-                )
-                .column_spacing(2)
-                .block(block.clone());
+        let widths = [3, 3, 2].map(ratatui::layout::Constraint::Fill);
+        let header = ratatui::widgets::Row::new(["PROFILE", "AGENT", "AUTH"])
+            .bold()
+            .bottom_margin(1);
+        let table = ratatui::widgets::Table::new(rows, widths)
+            .header(header)
+            .column_spacing(2)
+            .block(block.clone());
 
         insert_widget(terminal, chunk.len() as u16 + 4, table)?;
     }
@@ -75,22 +81,18 @@ fn render<B: ratatui::backend::Backend>(
     Ok(())
 }
 
-// Helper function to insert a widget into the terminal, ensuring it fits within the specified height.
 fn insert_widget<B: ratatui::backend::Backend>(
     terminal: &mut ratatui::Terminal<B>,
     height: u16,
     widget: impl Widget,
 ) -> Result<(), B::Error> {
     terminal.insert_before(height, |buffer| {
-        let area = ratatui::layout::Rect {
-            width: buffer.area.width.min(TABLE_WIDTH),
-            ..buffer.area
-        };
+        let mut area = buffer.area;
+        area.width = area.width.min(TABLE_WIDTH);
         widget.render(area, buffer);
     })
 }
 
-// Helper function to create a table row for a profile, with color coding based on the authentication mode.
 fn profile_row<'a>(name: &'a str, profile: &Profile) -> ratatui::widgets::Row<'a> {
     let color = match profile.auth {
         AuthMode::Subscription => ratatui::style::Color::Magenta,
