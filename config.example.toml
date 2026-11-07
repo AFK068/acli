@@ -1,0 +1,9 @@
+[profiles.personal]
+agent = "claude-code"
+auth = "subscription"
+
+[profiles.work]
+agent = "codex"
+auth = "api"
+# Environment variable name, not the API key itself.
+api_key_env = "CODEX_WORK_KEY"

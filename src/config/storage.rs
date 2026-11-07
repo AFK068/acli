@@ -1,8 +1,26 @@
+use anyhow::Context;
+
 use super::Config;
 
+pub(crate) fn default_path() -> anyhow::Result<std::path::PathBuf> {
+    let directories = directories::ProjectDirs::from("", "", "acli")
+        .context("Could not determine the configuration directory")?;
+    Ok(directories.config_dir().join("config.toml"))
+}
+
 pub(crate) fn load(path: &std::path::Path) -> anyhow::Result<Config> {
-    let input = std::fs::read_to_string(path)?;
-    parse(&input)
+    let config_str = read(path)?;
+    parse(&config_str).with_context(|| format!("Invalid configuration '{}'", path.display()))
+}
+
+fn read(path: &std::path::Path) -> anyhow::Result<String> {
+    match std::fs::read_to_string(path) {
+        Ok(input) => Ok(input),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => {
+            Err(error).with_context(|| format!("Could not read configuration '{}'", path.display()))
+        }
+    }
 }
 
 fn parse(input: &str) -> anyhow::Result<Config> {
@@ -15,6 +33,13 @@ fn parse(input: &str) -> anyhow::Result<Config> {
 mod tests {
     use super::*;
     use crate::config::{Agent, AuthMode};
+
+    #[test]
+    fn example_config_is_valid() -> anyhow::Result<()> {
+        let config = parse(include_str!("../../config.example.toml"))?;
+        assert!(!config.profiles.is_empty());
+        Ok(())
+    }
 
     #[test]
     fn accepts_config_without_profiles() -> anyhow::Result<()> {
