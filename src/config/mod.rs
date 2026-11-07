@@ -19,6 +19,15 @@ impl Config {
         Ok(())
     }
 
+    pub(crate) fn validate_profile_name(&self, name: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(!name.trim().is_empty(), "Profile name must not be empty");
+        anyhow::ensure!(
+            self.get_profile(name).is_none(),
+            "Profile '{name}' already exists"
+        );
+        Ok(())
+    }
+
     pub(crate) fn get_profile(&self, name: &str) -> Option<&Profile> {
         self.profiles.get(name)
     }
