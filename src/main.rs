@@ -1,6 +1,7 @@
 mod agents;
 mod cli;
 mod config;
+mod launch;
 
 use clap::Parser;
 
