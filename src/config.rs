@@ -5,6 +5,7 @@ use std::fmt;
 // Represents the configuration for the application, including profiles.
 #[derive(Deserialize)]
 pub(crate) struct Config {
+    #[serde(default)]
     pub(crate) profiles: BTreeMap<String, Profile>,
 }
 
@@ -98,6 +99,15 @@ impl fmt::Display for AuthMode {
 #[cfg(test)]
 mod tests {
     use super::{Agent, AuthMode, Config};
+
+    #[test]
+    fn accepts_config_without_profiles() -> anyhow::Result<()> {
+        for input in ["", " \n", "# No profiles yet\n", "[profiles]\n"] {
+            let config = Config::parse(input)?;
+            assert!(config.profiles.is_empty());
+        }
+        Ok(())
+    }
 
     #[test]
     fn parses_named_profiles() -> anyhow::Result<()> {
