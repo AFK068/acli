@@ -117,11 +117,7 @@ mod tests {
                 .map(|index| {
                     (
                         format!("profile-{index:03}"),
-                        Profile {
-                            agent: Agent::Codex,
-                            auth: AuthMode::Subscription,
-                            api_key_env: None,
-                        },
+                        Profile::new(Agent::Codex, AuthMode::Subscription, None),
                     )
                 })
                 .collect(),

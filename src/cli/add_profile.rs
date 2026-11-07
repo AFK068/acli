@@ -37,11 +37,7 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
         None
     };
 
-    let profile = Profile {
-        agent,
-        auth,
-        api_key_env,
-    };
+    let profile = Profile::new(agent, auth, api_key_env);
     storage::add_profile(path, name, profile)?;
     println!("Profile '{name}' saved to {}", path.display());
     Ok(())

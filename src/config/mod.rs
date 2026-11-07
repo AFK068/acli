@@ -1,7 +1,8 @@
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
+pub(crate) mod paths;
 pub(crate) mod storage;
 
 #[derive(Deserialize)]
@@ -12,8 +13,13 @@ pub(crate) struct Config {
 
 impl Config {
     fn validate(&self) -> anyhow::Result<()> {
+        let mut ids = HashSet::new();
         for (name, profile) in &self.profiles {
             profile.validate(name)?;
+            anyhow::ensure!(
+                ids.insert(profile.id),
+                "Profile '{name}' has a duplicate ID"
+            );
         }
 
         Ok(())
@@ -35,13 +41,26 @@ impl Config {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Profile {
+    // Storage saves generated IDs when migrating existing profiles.
+    #[serde(default = "uuid::Uuid::new_v4")]
+    pub(crate) id: uuid::Uuid,
     pub(crate) agent: Agent,
     pub(crate) auth: AuthMode,
     pub(crate) api_key_env: Option<String>,
 }
 
 impl Profile {
+    pub(crate) fn new(agent: Agent, auth: AuthMode, api_key_env: Option<String>) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4(),
+            agent,
+            auth,
+            api_key_env,
+        }
+    }
+
     fn validate(&self, name: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.id.is_nil(), "Profile '{name}' has an empty ID");
         let key_env = self.api_key_env.as_deref().unwrap_or("").trim();
         anyhow::ensure!(
             self.auth != AuthMode::Api || !key_env.is_empty(),

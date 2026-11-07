@@ -1,8 +1,10 @@
 [profiles.personal]
+id = "8d8ed9a1-9c7e-4ad3-a69a-6e9dc9a05745"
 agent = "claude-code"
 auth = "subscription"
 
 [profiles.work]
+id = "5be806a5-2288-4bc4-918c-dc463f751132"
 agent = "codex"
 auth = "api"
 # Environment variable name, not the API key itself.

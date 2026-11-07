@@ -14,3 +14,4 @@ tempfile = "3"
 toml = "0.8"
 toml_edit = "0.22"
 url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
