@@ -1,10 +1,11 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::fmt;
 
 // Represents the configuration for the application, including profiles.
 #[derive(Deserialize)]
 pub(crate) struct Config {
-    pub(crate) profiles: std::collections::BTreeMap<String, Profile>,
+    pub(crate) profiles: BTreeMap<String, Profile>,
 }
 
 // Configuration structure for the application.
@@ -64,12 +65,34 @@ pub(crate) enum Agent {
     Codex,
 }
 
+// Implements the Display trait for the Agent enum to provide a string representation.
+impl fmt::Display for Agent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::ClaudeCode => "claude-code",
+            Self::Codex => "codex",
+        };
+        formatter.write_str(name)
+    }
+}
+
 // Represents the different authentication modes that can be used in the application.
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum AuthMode {
     Subscription,
     Api,
+}
+
+// Implements the Display trait for the AuthMode enum to provide a string representation.
+impl fmt::Display for AuthMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Subscription => "subscription",
+            Self::Api => "api",
+        };
+        formatter.write_str(name)
+    }
 }
 
 #[cfg(test)]
