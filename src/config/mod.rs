@@ -103,3 +103,112 @@ impl fmt::Display for AuthMode {
         formatter.write_str(name)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn example_config_is_valid() -> anyhow::Result<()> {
+        let config: Config = toml::from_str(include_str!("../../config.example.toml"))?;
+        config.validate()?;
+        assert!(!config.profiles.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn accepts_config_without_profiles() -> anyhow::Result<()> {
+        for input in ["", " \n", "# No profiles yet\n", "[profiles]\n"] {
+            let config: Config = toml::from_str(input)?;
+            config.validate()?;
+            assert!(config.profiles.is_empty());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parses_named_profiles() -> anyhow::Result<()> {
+        let config: Config = toml::from_str(
+            r#"
+[profiles.personal]
+agent = "claude-code"
+auth = "subscription"
+
+[profiles.work]
+agent = "codex"
+auth = "api"
+api_key_env = "CODEX_WORK_KEY"
+"#,
+        )?;
+
+        config.validate()?;
+        let personal = config.get_profile("personal").expect("personal profile");
+        assert!(matches!(personal.agent, Agent::ClaudeCode));
+        assert_eq!(personal.auth, AuthMode::Subscription);
+        assert!(personal.api_key_env.is_none());
+
+        let work = config.get_profile("work").expect("work profile");
+        assert!(matches!(work.agent, Agent::Codex));
+        assert_eq!(work.auth, AuthMode::Api);
+        assert_eq!(work.api_key_env.as_deref(), Some("CODEX_WORK_KEY"));
+        assert!(config.get_profile("missing").is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_api_profiles_without_a_key_env_name() {
+        for key_env in [None, Some(""), Some("   ")] {
+            let profile = Profile::new(Agent::Codex, AuthMode::Api, key_env.map(str::to_owned));
+            let error = profile.validate("work").unwrap_err();
+            assert!(error.to_string().contains("Profile 'work'"), "{error}");
+        }
+    }
+
+    #[test]
+    fn accepts_api_profile_with_a_key_env_name() -> anyhow::Result<()> {
+        let profile = Profile::new(Agent::Codex, AuthMode::Api, Some("WORK_KEY".into()));
+        profile.validate("work")
+    }
+
+    #[test]
+    fn rejects_nil_profile_id() {
+        let mut profile = Profile::new(Agent::Codex, AuthMode::Subscription, None);
+        profile.id = uuid::Uuid::nil();
+        let error = profile.validate("personal").unwrap_err();
+        assert!(error.to_string().contains("empty ID"));
+    }
+
+    #[test]
+    fn rejects_duplicate_profile_ids() {
+        let first = Profile::new(Agent::Codex, AuthMode::Subscription, None);
+        let mut second = Profile::new(Agent::ClaudeCode, AuthMode::Subscription, None);
+        second.id = first.id;
+        let config = Config {
+            profiles: BTreeMap::from([("first".into(), first), ("second".into(), second)]),
+        };
+        let error = config.validate().unwrap_err();
+        assert!(error.to_string().contains("duplicate ID"));
+    }
+
+    #[test]
+    fn rejects_blank_profile_names() {
+        let config = Config {
+            profiles: BTreeMap::new(),
+        };
+        for name in ["", "   ", "\t\n"] {
+            let error = config.validate_profile_name(name).unwrap_err();
+            assert!(error.to_string().contains("must not be empty"));
+        }
+    }
+
+    #[test]
+    fn rejects_existing_profile_name() -> anyhow::Result<()> {
+        let profile = Profile::new(Agent::Codex, AuthMode::Subscription, None);
+        let config = Config {
+            profiles: BTreeMap::from([("work".into(), profile)]),
+        };
+        let error = config.validate_profile_name("work").unwrap_err();
+        assert!(error.to_string().contains("already exists"));
+        config.validate_profile_name("personal")
+    }
+}
