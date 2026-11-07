@@ -1,5 +1,5 @@
+use crate::app::profiles;
 use crate::config::{Agent, AuthMode, Profile};
-use crate::profiles;
 use std::io::IsTerminal;
 
 pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {

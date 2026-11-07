@@ -1,4 +1,5 @@
-use crate::config::{AuthMode, Config, Profile, storage};
+use crate::app::profiles;
+use crate::config::{AuthMode, Config, Profile};
 use ratatui::{style::Stylize, widgets::Widget};
 use std::io::{self, IsTerminal, Write};
 
@@ -6,7 +7,7 @@ const TABLE_WIDTH: u16 = 88;
 const ROWS_PER_BLOCK: usize = 128;
 
 pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
-    let config = storage::load(path)?;
+    let config = profiles::load(path)?;
     print(&config)?;
     if config.profiles.is_empty() {
         eprintln!("Add your first profile with: acli profile add");

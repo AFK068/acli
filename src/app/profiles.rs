@@ -60,7 +60,7 @@ mod tests {
         assert!(!saved.contains("api_key_env"));
         assert_eq!(credentials::load(id)?, "test-secret");
 
-        let command = crate::launch::prepare(&path, "work")?;
+        let command = crate::app::launch::prepare(&path, "work")?;
         assert!(command.get_envs().any(|(name, value)| {
             name == "ACLI_API_KEY" && value == Some(std::ffi::OsStr::new("test-secret"))
         }));
@@ -77,7 +77,7 @@ mod tests {
             &path,
             saved.replace("[profiles.work]", "[profiles.renamed]"),
         )?;
-        let command = crate::launch::prepare(&path, "renamed")?;
+        let command = crate::app::launch::prepare(&path, "renamed")?;
         assert!(command.get_envs().any(|(name, value)| {
             name == "ACLI_API_KEY" && value == Some(std::ffi::OsStr::new("test-secret"))
         }));

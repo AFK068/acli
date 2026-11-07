@@ -2,10 +2,11 @@ use anyhow::Context;
 use std::path::Path;
 use std::process::Command;
 
-use crate::config::{AuthMode, paths, storage};
+use super::profiles;
+use crate::config::{AuthMode, paths};
 
 pub(crate) fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {
-    let config = storage::load(path)?;
+    let config = profiles::load(path)?;
     let profile = config
         .get_profile(name)
         .with_context(|| format!("Profile '{name}' not found"))?;
@@ -32,29 +33,10 @@ pub(crate) fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {
     Ok(crate::agents::command(profile, &directory, key.as_deref()))
 }
 
-pub(crate) fn run(command: &mut Command) -> anyhow::Result<()> {
-    let program = command.get_program().to_string_lossy().into_owned();
-    #[cfg(unix)]
-    let error = {
-        use std::os::unix::process::CommandExt;
-        command.exec()
-    };
-    #[cfg(not(unix))]
-    let error = match command.status() {
-        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-        Err(error) => error,
-    };
-
-    if error.kind() == std::io::ErrorKind::NotFound {
-        anyhow::bail!("Could not find '{program}'. Install it and add it to PATH");
-    }
-    Err(error).with_context(|| format!("Could not start '{program}'"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Agent, Profile};
+    use crate::config::{Agent, Profile, storage};
 
     #[test]
     fn reports_missing_profile() -> anyhow::Result<()> {
@@ -92,15 +74,6 @@ mod tests {
                 name == "CODEX_HOME" && value == Some(expected.as_os_str())
             })
         );
-        Ok(())
-    }
-
-    #[test]
-    fn reports_missing_executable() -> anyhow::Result<()> {
-        let directory = tempfile::tempdir()?;
-        let mut command = Command::new(directory.path().join("missing-agent"));
-        let error = run(&mut command).unwrap_err();
-        assert!(error.to_string().contains("Install it and add it to PATH"));
         Ok(())
     }
 }

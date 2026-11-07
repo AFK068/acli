@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 
 mod add_profile;
 mod list_profiles;
+mod run_agent;
 
 #[derive(Parser)]
 #[command(version, about = "A hub for terminal coding agents")]
@@ -15,10 +16,7 @@ impl Cli {
         match &self.command {
             Command::List => list_profiles::run(path),
             Command::Profile(ProfileCommand::Add) => add_profile::run(path),
-            Command::Run { name } => {
-                let mut command = crate::launch::prepare(path, name)?;
-                crate::launch::run(&mut command)
-            }
+            Command::Run { name } => run_agent::run(path, name),
         }
     }
 }
