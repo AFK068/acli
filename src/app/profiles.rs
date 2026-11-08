@@ -39,6 +39,16 @@ pub(crate) fn add(
     Ok(())
 }
 
+pub(crate) fn remove(path: &Path, name: &str) -> anyhow::Result<()> {
+    let profile = storage::remove_profile(path, name)?;
+    if profile.auth == AuthMode::Api && profile.api_key_env.is_none() {
+        credentials::delete(profile.id).with_context(|| {
+            format!("Profile '{name}' was removed, but its saved API key could not be deleted")
+        })?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,6 +168,67 @@ mod tests {
             config.get_profile("work").unwrap().api_key_env.as_deref(),
             Some("WORK_KEY")
         );
+        Ok(())
+    }
+    #[test]
+    fn removes_profile_and_its_saved_key() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        let profile = api_profile();
+        let id = profile.id;
+        add(&path, "work", profile, Some("test-secret"))?;
+
+        remove(&path, "work")?;
+
+        assert!(load(&path)?.profiles.is_empty());
+        assert!(
+            credentials::load(id)
+                .unwrap_err()
+                .to_string()
+                .contains("No API key saved")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn removes_profiles_without_saved_keys() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        for profile in [
+            Profile::new(Agent::Codex, AuthMode::Subscription, None),
+            api_profile(),
+        ] {
+            storage::add_profile(&path, "work", profile)?;
+            remove(&path, "work")?;
+            assert!(load(&path)?.profiles.is_empty());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn reports_key_cleanup_failure_after_removing_profile() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        let profile = api_profile();
+        let id = profile.id;
+        add(&path, "work", profile, Some("test-secret"))?;
+        let entry = credentials::entry(id)?;
+        entry
+            .inner
+            .as_any()
+            .downcast_ref::<keyring_core::mock::Cred>()
+            .unwrap()
+            .set_error(keyring::Error::NoStorageAccess(Box::new(
+                std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+            )));
+
+        let error = remove(&path, "work").unwrap_err();
+
+        assert!(error.to_string().contains("was removed, but"));
+        assert!(!format!("{error:?}").contains("test-secret"));
+        assert!(load(&path)?.profiles.is_empty());
+        assert_eq!(credentials::load(id)?, "test-secret");
+        credentials::delete(id)?;
         Ok(())
     }
 }

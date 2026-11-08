@@ -31,6 +31,23 @@ pub(crate) fn add_profile(
     write(path, &document.to_string())
 }
 
+pub(crate) fn remove_profile(path: &std::path::Path, name: &str) -> anyhow::Result<Profile> {
+    let _lock = lock(path)?;
+    let (mut config, mut document) = read_config(path)?;
+    let profile = config
+        .profiles
+        .remove(name)
+        .with_context(|| format!("Profile '{name}' not found"))?;
+    document
+        .get_mut("profiles")
+        .and_then(toml_edit::Item::as_table_like_mut)
+        .context("Expected profiles to be a TOML table")?
+        .remove(name);
+    insert_missing_ids(&config, &mut document);
+    write(path, &document.to_string())?;
+    Ok(profile)
+}
+
 fn read_config(path: &std::path::Path) -> anyhow::Result<(Config, toml_edit::DocumentMut)> {
     let input = read(path)?;
     let config =
@@ -128,6 +145,56 @@ mod tests {
 
     fn subscription_profile() -> Profile {
         Profile::new(Agent::Codex, AuthMode::Subscription, None)
+    }
+
+    #[test]
+    fn removes_only_selected_profile_and_keeps_agent_data() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        let profile = subscription_profile();
+        let id = profile.id;
+        let data = profile_dir(&path, &profile).join("history.txt");
+        std::fs::write(&path, "# Keep this comment\ncustom = true\n")?;
+        add_profile(&path, "work.test", profile)?;
+        add_profile(&path, "personal", subscription_profile())?;
+        let remaining_id = load(&path)?.get_profile("personal").unwrap().id;
+        std::fs::write(&data, "history")?;
+
+        assert_eq!(remove_profile(&path, "work.test")?.id, id);
+
+        let config = load(&path)?;
+        assert_eq!(config.profiles.len(), 1);
+        assert_eq!(config.get_profile("personal").unwrap().id, remaining_id);
+        let saved = std::fs::read_to_string(&path)?;
+        assert!(saved.contains("# Keep this comment"));
+        assert!(saved.contains("custom = true"));
+        assert_eq!(std::fs::read_to_string(data)?, "history");
+        Ok(())
+    }
+
+    #[test]
+    fn missing_profile_does_not_change_configuration() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        let error = remove_profile(&path, "missing").unwrap_err();
+        assert_eq!(error.to_string(), "Profile 'missing' not found");
+        assert!(!path.exists());
+        add_profile(&path, "personal", subscription_profile())?;
+        let saved = std::fs::read(&path)?;
+        assert!(remove_profile(&path, "missing").is_err());
+        assert_eq!(std::fs::read(&path)?, saved);
+        Ok(())
+    }
+
+    #[test]
+    fn removal_does_not_overwrite_invalid_configuration() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        let input = "[profiles.work\n";
+        std::fs::write(&path, input)?;
+        assert!(remove_profile(&path, "work").is_err());
+        assert_eq!(std::fs::read_to_string(&path)?, input);
+        Ok(())
     }
 
     #[test]

@@ -16,6 +16,11 @@ impl Cli {
         match &self.command {
             Command::List => list_profiles::run(path),
             Command::Profile(ProfileCommand::Add) => add_profile::run(path),
+            Command::Profile(ProfileCommand::Remove { name }) => {
+                crate::app::profiles::remove(path, name)?;
+                println!("Profile '{name}' removed");
+                Ok(())
+            }
             Command::Run { name } => run_agent::run(path, name),
         }
     }
@@ -36,4 +41,6 @@ enum Command {
 enum ProfileCommand {
     /// Add a profile interactively.
     Add,
+    /// Remove a profile and its saved API key; keep agent data.
+    Remove { name: String },
 }
