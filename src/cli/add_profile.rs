@@ -21,13 +21,20 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
         ("Codex", Agent::Codex),
         ("Claude Code", Agent::ClaudeCode),
         ("Kimi Code", Agent::Kimi),
+        ("OpenCode", Agent::OpenCode),
     ];
     let modes = [("Native", AuthMode::Native), ("API key", AuthMode::Api)];
     let Some(agent) = select("Agent", &agents)? else {
         return Ok(());
     };
-    let Some(auth) = select("Authentication", &modes)? else {
-        return Ok(());
+    let auth = if agent.supports_api_key() {
+        let Some(auth) = select("Authentication", &modes)? else {
+            return Ok(());
+        };
+        auth
+    } else {
+        println!("Sign in inside the agent after running this profile.");
+        AuthMode::Native
     };
     let key = if auth == AuthMode::Api {
         if matches!(agent, Agent::Kimi) {

@@ -4,7 +4,9 @@ use std::process::Command;
 
 mod claude;
 mod codex;
+mod environment;
 mod kimi;
+mod opencode;
 
 // A key selects API authentication; None selects the agent's native login.
 pub(crate) fn command(agent: Agent, directory: &Path, key: Option<&str>) -> Command {
@@ -12,6 +14,7 @@ pub(crate) fn command(agent: Agent, directory: &Path, key: Option<&str>) -> Comm
         Agent::Codex => codex::command(directory, key),
         Agent::ClaudeCode => claude::command(directory, key),
         Agent::Kimi => kimi::command(directory, key),
+        Agent::OpenCode => opencode::command(directory),
     }
 }
 
@@ -25,6 +28,7 @@ mod tests {
             (Agent::Codex, "codex"),
             (Agent::ClaudeCode, "claude"),
             (Agent::Kimi, "kimi"),
+            (Agent::OpenCode, "opencode"),
         ] {
             let command = command(agent, Path::new("profile-data"), None);
             assert_eq!(command.get_program(), program);

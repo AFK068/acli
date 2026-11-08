@@ -122,7 +122,12 @@ mod tests {
     fn saves_and_loads_every_agent_with_its_own_directory() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        for agent in [Agent::Codex, Agent::ClaudeCode, Agent::Kimi] {
+        for agent in [
+            Agent::Codex,
+            Agent::ClaudeCode,
+            Agent::Kimi,
+            Agent::OpenCode,
+        ] {
             let name = agent.to_string();
             let profile = Profile::new(agent, AuthMode::Native);
             let id = profile.id;
@@ -134,6 +139,26 @@ mod tests {
             assert_eq!(loaded.id, id);
             assert_eq!(profile_dir(&path, loaded), expected);
             assert!(expected.is_dir());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_unsupported_api_profiles_before_saving() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        for agent in [Agent::OpenCode] {
+            let profile = Profile::new(agent, AuthMode::Api);
+            let expected = profile_dir(&path, &profile);
+            let error = add_profile(&path, "work", profile).unwrap_err();
+            assert!(error.to_string().contains("not supported yet"));
+            assert!(!path.exists());
+            assert!(!expected.exists());
+            let input = format!(
+                "[profiles.work]\nid = '{}'\nagent = '{agent}'\nauth = 'api'\n",
+                uuid::Uuid::new_v4()
+            );
+            assert!(parse(&input).is_err());
         }
         Ok(())
     }

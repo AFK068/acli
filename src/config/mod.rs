@@ -74,6 +74,11 @@ impl Profile {
 
     pub(crate) fn validate(&self, name: &str) -> anyhow::Result<()> {
         anyhow::ensure!(!self.id.is_nil(), "Profile '{name}' has an empty ID");
+        anyhow::ensure!(
+            self.auth != AuthMode::Api || self.agent.supports_api_key(),
+            "Profile '{name}': API key authentication for {} is not supported yet; sign in inside the agent instead",
+            self.agent
+        );
         Ok(())
     }
 }
@@ -84,6 +89,14 @@ pub(crate) enum Agent {
     ClaudeCode,
     Codex,
     Kimi,
+    #[serde(rename = "opencode")]
+    OpenCode,
+}
+
+impl Agent {
+    pub(crate) fn supports_api_key(self) -> bool {
+        matches!(self, Self::ClaudeCode | Self::Codex | Self::Kimi)
+    }
 }
 
 impl fmt::Display for Agent {
@@ -92,6 +105,7 @@ impl fmt::Display for Agent {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
             Self::Kimi => "kimi",
+            Self::OpenCode => "opencode",
         };
         formatter.write_str(name)
     }
