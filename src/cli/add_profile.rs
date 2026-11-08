@@ -1,7 +1,7 @@
 use std::io::IsTerminal;
 
 use crate::app::profiles;
-use crate::config::{Agent, AuthMode, Profile};
+use crate::config::{Agent, AuthMode, Profile, Provider};
 
 pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
     anyhow::ensure!(
@@ -38,6 +38,19 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
         println!("Sign in inside the agent after running this profile.");
         AuthMode::Native
     };
+    let mut profile = Profile::new(agent, auth);
+    if matches!(agent, Agent::OpenCode) && auth == AuthMode::Api {
+        let providers = [
+            ("OpenAI", Provider::OpenAi),
+            ("Anthropic", Provider::Anthropic),
+            ("Kimi Code (kimi.com)", Provider::KimiCodePlanCn),
+            ("Kimi Code (kimi.ai)", Provider::KimiCodePlanGlobal),
+        ];
+        let Some(provider) = select("Provider", &providers)? else {
+            return Ok(());
+        };
+        profile.provider = Some(provider);
+    }
     let key = if auth == AuthMode::Api {
         if matches!(agent, Agent::Kimi) {
             println!("Use a Kimi Code API key (api.kimi.com), not a Moonshot Platform key.");
@@ -47,7 +60,7 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
         None
     };
 
-    profiles::add(path, name, Profile::new(agent, auth), key.as_deref())?;
+    profiles::add(path, name, profile, key.as_deref())?;
     println!("Profile '{name}' saved");
     Ok(())
 }

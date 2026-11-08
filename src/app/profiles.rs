@@ -96,6 +96,83 @@ mod tests {
     }
 
     #[test]
+    fn opencode_uses_saved_provider_and_key() -> anyhow::Result<()> {
+        use crate::config::Provider;
+        use std::collections::BTreeMap;
+        use std::ffi::OsStr;
+
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        for (provider, name, variable) in [
+            (Provider::OpenAi, "openai", "OPENAI_API_KEY"),
+            (Provider::Anthropic, "anthropic", "ANTHROPIC_API_KEY"),
+            (
+                Provider::KimiCodePlanCn,
+                "kimi-code-plan-cn",
+                "KIMI_API_KEY",
+            ),
+            (
+                Provider::KimiCodePlanGlobal,
+                "kimi-code-plan-global",
+                "KIMI_API_KEY",
+            ),
+        ] {
+            let mut profile = Profile::new(Agent::OpenCode, AuthMode::Api);
+            profile.provider = Some(provider);
+            let id = profile.id;
+            add(&path, name, profile, Some("test-opencode-secret"))?;
+            let saved = std::fs::read_to_string(&path)?;
+            assert!(saved.contains(&format!("provider = \"{name}\"")));
+            assert!(!saved.contains("test-opencode-secret"));
+            assert_eq!(load(&path)?.profile(name)?.provider, Some(provider));
+
+            rename(&path, name, "renamed")?;
+            let command = crate::app::launch::prepare(&path, "renamed")?;
+            let env: BTreeMap<_, _> = command.get_envs().collect();
+            assert_eq!(
+                env[OsStr::new(variable)],
+                Some(OsStr::new("test-opencode-secret"))
+            );
+            for other in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "KIMI_API_KEY"] {
+                if other != variable {
+                    assert_eq!(env[OsStr::new(other)], None);
+                }
+            }
+            let policy = env[OsStr::new("OPENCODE_CONFIG_CONTENT")]
+                .unwrap()
+                .to_str()
+                .unwrap();
+            assert_eq!(
+                policy
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .collect::<String>(),
+                format!(
+                    r#"{{"policies":[{{"action":"provider.use","resource":"*","effect":"deny"}},{{"action":"provider.use","resource":"{name}","effect":"allow"}}]}}"#
+                )
+            );
+            assert!(!format!("{:?}", command.get_args()).contains("test-opencode-secret"));
+
+            remove(&path, "renamed")?;
+            assert!(credentials::load(id).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn missing_opencode_provider_does_not_save_key_or_config() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        let profile = Profile::new(Agent::OpenCode, AuthMode::Api);
+        let id = profile.id;
+        let error = add(&path, "work", profile, Some("test-secret")).unwrap_err();
+        assert!(error.to_string().contains("select an OpenCode provider"));
+        assert!(!path.exists());
+        assert!(credentials::load(id).is_err());
+        Ok(())
+    }
+
+    #[test]
     fn removes_key_if_saving_profile_fails() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");

@@ -61,6 +61,7 @@ pub(crate) struct Profile {
     pub(crate) id: uuid::Uuid,
     pub(crate) agent: Agent,
     pub(crate) auth: AuthMode,
+    pub(crate) provider: Option<Provider>,
 }
 
 impl Profile {
@@ -69,6 +70,7 @@ impl Profile {
             id: uuid::Uuid::new_v4(),
             agent,
             auth,
+            provider: None,
         }
     }
 
@@ -79,6 +81,17 @@ impl Profile {
             "Profile '{name}': API key authentication for {} is not supported yet; sign in inside the agent instead",
             self.agent
         );
+        if matches!(self.agent, Agent::OpenCode) && self.auth == AuthMode::Api {
+            anyhow::ensure!(
+                self.provider.is_some(),
+                "Profile '{name}': select an OpenCode provider"
+            );
+        } else {
+            anyhow::ensure!(
+                self.provider.is_none(),
+                "Profile '{name}': provider is only supported for OpenCode API profiles"
+            );
+        }
         Ok(())
     }
 }
@@ -97,7 +110,10 @@ pub(crate) enum Agent {
 
 impl Agent {
     pub(crate) fn supports_api_key(self) -> bool {
-        matches!(self, Self::ClaudeCode | Self::Codex | Self::Kimi)
+        matches!(
+            self,
+            Self::ClaudeCode | Self::Codex | Self::Kimi | Self::OpenCode
+        )
     }
 }
 
@@ -129,6 +145,27 @@ impl fmt::Display for AuthMode {
             Self::Api => "api",
         };
         formatter.write_str(name)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Provider {
+    #[serde(rename = "openai")]
+    OpenAi,
+    Anthropic,
+    KimiCodePlanCn,
+    KimiCodePlanGlobal,
+}
+
+impl fmt::Display for Provider {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::OpenAi => "openai",
+            Self::Anthropic => "anthropic",
+            Self::KimiCodePlanCn => "kimi-code-plan-cn",
+            Self::KimiCodePlanGlobal => "kimi-code-plan-global",
+        })
     }
 }
 
@@ -185,6 +222,39 @@ auth = "api"
     #[test]
     fn accepts_api_profile_with_system_credentials() -> anyhow::Result<()> {
         Profile::new(Agent::Codex, AuthMode::Api).validate("work")
+    }
+
+    #[test]
+    fn requires_provider_only_for_opencode_api() -> anyhow::Result<()> {
+        let mut profile = Profile::new(Agent::OpenCode, AuthMode::Api);
+        assert!(
+            profile
+                .validate("work")
+                .unwrap_err()
+                .to_string()
+                .contains("select an OpenCode provider")
+        );
+        profile.provider = Some(Provider::OpenAi);
+        profile.validate("work")?;
+
+        for agent in [
+            Agent::OpenCode,
+            Agent::Codex,
+            Agent::ClaudeCode,
+            Agent::Kimi,
+            Agent::Pi,
+            Agent::ZCode,
+        ] {
+            for auth in [AuthMode::Native, AuthMode::Api] {
+                if matches!(agent, Agent::OpenCode) && auth == AuthMode::Api {
+                    continue;
+                }
+                let mut profile = Profile::new(agent, auth);
+                profile.provider = Some(Provider::OpenAi);
+                assert!(profile.validate("work").is_err());
+            }
+        }
+        Ok(())
     }
 
     #[test]

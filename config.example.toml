@@ -8,3 +8,9 @@ id = "5be806a5-2288-4bc4-918c-dc463f751132"
 agent = "codex"
 auth = "api"
 # API keys are stored in the system credential store by profile ID.
+
+[profiles.opencode]
+id = "470290c3-a835-4f57-8c61-ec6df0a29e9f"
+agent = "opencode"
+auth = "api"
+provider = "anthropic"

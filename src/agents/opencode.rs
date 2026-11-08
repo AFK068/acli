@@ -1,7 +1,8 @@
+use crate::config::Provider;
 use std::path::Path;
 use std::process::Command;
 
-pub(super) fn command(directory: &Path) -> Command {
+pub(super) fn command(directory: &Path, credentials: Option<(Provider, &str)>) -> Command {
     let mut command = Command::new("opencode");
     super::environment::clear_provider_credentials(&mut command);
     // OpenCode 2 uses a shared server unless standalone mode is explicit.
@@ -20,6 +21,22 @@ pub(super) fn command(directory: &Path) -> Command {
     ] {
         command.env_remove(name);
     }
+    if let Some((provider, key)) = credentials {
+        let variable = match provider {
+            Provider::OpenAi => "OPENAI_API_KEY",
+            Provider::Anthropic => "ANTHROPIC_API_KEY",
+            Provider::KimiCodePlanCn | Provider::KimiCodePlanGlobal => "KIMI_API_KEY",
+        };
+        command.env(variable, key).env(
+            "OPENCODE_CONFIG_CONTENT",
+            format!(
+                r#"{{"policies":[
+                    {{"action":"provider.use","resource":"*","effect":"deny"}},
+                    {{"action":"provider.use","resource":"{provider}","effect":"allow"}}
+                ]}}"#,
+            ),
+        );
+    }
     command
 }
 
@@ -32,7 +49,7 @@ mod tests {
     #[test]
     fn isolates_credentials_config_and_server() {
         let directory = Path::new("profile-data");
-        let command = command(directory);
+        let command = command(directory, None);
         let env: BTreeMap<_, _> = command.get_envs().collect();
         for (variable, child) in [
             ("XDG_DATA_HOME", "data"),

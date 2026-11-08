@@ -71,6 +71,9 @@ fn profile_table(profile: &Profile) -> toml_edit::Table {
     table["id"] = toml_edit::value(profile.id.to_string());
     table["agent"] = toml_edit::value(profile.agent.to_string());
     table["auth"] = toml_edit::value(profile.auth.to_string());
+    if let Some(provider) = profile.provider {
+        table["provider"] = toml_edit::value(provider.to_string());
+    }
     table
 }
 
@@ -149,7 +152,7 @@ mod tests {
     fn rejects_unsupported_api_profiles_before_saving() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        for agent in [Agent::OpenCode, Agent::Pi, Agent::ZCode] {
+        for agent in [Agent::Pi, Agent::ZCode] {
             let profile = Profile::new(agent, AuthMode::Api);
             let expected = profile_dir(&path, &profile);
             let error = add_profile(&path, "work", profile).unwrap_err();
@@ -175,7 +178,7 @@ mod tests {
         let path = directory.path().join("config.toml");
         let input = include_str!("../../config.example.toml");
         std::fs::write(&path, input)?;
-        assert_eq!(load(&path)?.profiles.len(), 2);
+        assert_eq!(load(&path)?.profiles.len(), 3);
         assert_eq!(std::fs::read_to_string(&path)?, input);
         assert!(!path.with_extension("lock").exists());
         assert!(!directory.path().join("profiles").exists());
