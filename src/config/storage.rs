@@ -127,6 +127,7 @@ mod tests {
             Agent::ClaudeCode,
             Agent::Kimi,
             Agent::OpenCode,
+            Agent::Pi,
         ] {
             let name = agent.to_string();
             let profile = Profile::new(agent, AuthMode::Native);
@@ -147,7 +148,7 @@ mod tests {
     fn rejects_unsupported_api_profiles_before_saving() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        for agent in [Agent::OpenCode] {
+        for agent in [Agent::OpenCode, Agent::Pi] {
             let profile = Profile::new(agent, AuthMode::Api);
             let expected = profile_dir(&path, &profile);
             let error = add_profile(&path, "work", profile).unwrap_err();

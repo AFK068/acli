@@ -91,6 +91,7 @@ pub(crate) enum Agent {
     Kimi,
     #[serde(rename = "opencode")]
     OpenCode,
+    Pi,
 }
 
 impl Agent {
@@ -106,6 +107,7 @@ impl fmt::Display for Agent {
             Self::Codex => "codex",
             Self::Kimi => "kimi",
             Self::OpenCode => "opencode",
+            Self::Pi => "pi",
         };
         formatter.write_str(name)
     }
