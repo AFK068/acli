@@ -8,5 +8,3 @@ id = "5be806a5-2288-4bc4-918c-dc463f751132"
 agent = "codex"
 auth = "api"
 # API keys are stored in the system credential store by profile ID.
-# To read a key from the environment instead, set:
-# api_key_env = "CODEX_WORK_KEY"

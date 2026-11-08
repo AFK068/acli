@@ -4,14 +4,7 @@ use std::io::Write;
 use super::{Config, Profile, paths};
 
 pub(crate) fn load(path: &std::path::Path) -> anyhow::Result<Config> {
-    let _lock = lock(path)?;
-    let (config, mut document) = read_config(path)?;
-    let migrated = insert_missing_ids(&config, &mut document);
-    paths::create_profile_dirs(path, &config)?;
-    if migrated {
-        write(path, &document.to_string())?;
-    }
-    Ok(config)
+    parse(&read(path)?).with_context(|| format!("Invalid configuration '{}'", path.display()))
 }
 
 pub(crate) fn add_profile(
@@ -22,12 +15,12 @@ pub(crate) fn add_profile(
     let _lock = lock(path)?;
     let (mut config, mut document) = read_config(path)?;
     config.validate_profile_name(name)?;
+    let directory = paths::profile_dir(path, &profile);
     insert_profile(&mut document, name, &profile)?;
     config.profiles.insert(name.to_owned(), profile);
     config.validate()?;
 
-    insert_missing_ids(&config, &mut document);
-    paths::create_profile_dirs(path, &config)?;
+    paths::create_dir(&directory)?;
     write(path, &document.to_string())
 }
 
@@ -43,7 +36,6 @@ pub(crate) fn remove_profile(path: &std::path::Path, name: &str) -> anyhow::Resu
         .and_then(toml_edit::Item::as_table_like_mut)
         .context("Expected profiles to be a TOML table")?
         .remove(name);
-    insert_missing_ids(&config, &mut document);
     write(path, &document.to_string())?;
     Ok(profile)
 }
@@ -59,23 +51,6 @@ fn parse(input: &str) -> anyhow::Result<Config> {
     let config: Config = toml::from_str(input)?;
     config.validate()?;
     Ok(config)
-}
-
-fn insert_missing_ids(config: &Config, document: &mut toml_edit::DocumentMut) -> bool {
-    let mut changed = false;
-    for (name, profile) in &config.profiles {
-        let Some(entry) = document
-            .get_mut("profiles")
-            .and_then(|profiles| profiles.get_mut(name))
-        else {
-            continue;
-        };
-        if entry.get("id").is_none() {
-            entry["id"] = toml_edit::value(profile.id.to_string());
-            changed = true;
-        }
-    }
-    changed
 }
 
 fn insert_profile(
@@ -97,9 +72,6 @@ fn profile_table(profile: &Profile) -> toml_edit::Table {
     table["id"] = toml_edit::value(profile.id.to_string());
     table["agent"] = toml_edit::value(profile.agent.to_string());
     table["auth"] = toml_edit::value(profile.auth.to_string());
-    if let Some(key) = &profile.api_key_env {
-        table["api_key_env"] = toml_edit::value(key);
-    }
     table
 }
 
@@ -144,7 +116,24 @@ mod tests {
     use crate::config::{Agent, AuthMode, paths::profile_dir};
 
     fn subscription_profile() -> Profile {
-        Profile::new(Agent::Codex, AuthMode::Subscription, None)
+        Profile::new(Agent::Codex, AuthMode::Subscription)
+    }
+
+    #[test]
+    fn loading_configuration_does_not_write_files_or_create_directories() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let missing = directory.path().join("missing/config.toml");
+        assert!(load(&missing)?.profiles.is_empty());
+        assert!(!missing.parent().unwrap().exists());
+
+        let path = directory.path().join("config.toml");
+        let input = include_str!("../../config.example.toml");
+        std::fs::write(&path, input)?;
+        assert_eq!(load(&path)?.profiles.len(), 2);
+        assert_eq!(std::fs::read_to_string(&path)?, input);
+        assert!(!path.with_extension("lock").exists());
+        assert!(!directory.path().join("profiles").exists());
+        Ok(())
     }
 
     #[test]
@@ -208,7 +197,7 @@ mod tests {
         add_profile(
             &path,
             "work.test",
-            Profile::new(Agent::ClaudeCode, AuthMode::Api, Some("WORK_KEY".into())),
+            Profile::new(Agent::ClaudeCode, AuthMode::Api),
         )?;
 
         let config = load(&path)?;
@@ -216,7 +205,7 @@ mod tests {
         assert!(config.get_profile("personal").is_some());
         let work = config.get_profile("work.test").expect("new profile");
         assert!(matches!(work.agent, Agent::ClaudeCode));
-        assert_eq!(work.api_key_env.as_deref(), Some("WORK_KEY"));
+        assert_eq!(work.auth, AuthMode::Api);
         let personal = config.get_profile("personal").unwrap();
         assert_ne!(personal.id, work.id);
         for profile in config.profiles.values() {
@@ -228,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn migrates_legacy_ids_once_and_preserves_comments() -> anyhow::Result<()> {
+    fn rejects_profiles_without_ids_without_changing_file() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
         for input in [
@@ -236,14 +225,11 @@ mod tests {
             "# Keep this\nprofiles = { old = { agent = 'codex', auth = 'subscription' } }\n",
         ] {
             std::fs::write(&path, input)?;
-            let config = load(&path)?;
-            let profile = config.get_profile("old").unwrap();
-            let saved = std::fs::read_to_string(&path)?;
-            assert!(saved.contains(&profile.id.to_string()));
-            assert!(saved.contains("# Keep this"));
-            assert!(profile_dir(&path, profile).is_dir());
-            assert_eq!(load(&path)?.get_profile("old").unwrap().id, profile.id);
-            assert_eq!(std::fs::read_to_string(&path)?, saved);
+            let error = load(&path).err().expect("missing ID must be rejected");
+            assert!(format!("{error:#}").contains("missing field `id`"));
+            assert!(add_profile(&path, "new", subscription_profile()).is_err());
+            assert!(remove_profile(&path, "old").is_err());
+            assert_eq!(std::fs::read_to_string(&path)?, input);
         }
         Ok(())
     }
@@ -315,10 +301,7 @@ mod tests {
     fn concurrent_loads_and_additions_keep_ids_and_profiles() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        std::fs::write(
-            &path,
-            "[profiles.old]\nagent = 'codex'\nauth = 'subscription'\n",
-        )?;
+        add_profile(&path, "old", subscription_profile())?;
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
         let handles: Vec<_> = (0..2)
             .map(|index| {
@@ -359,8 +342,8 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
         for input in [
-            "# My settings\ncustom = true\n[profiles.personal]\nagent = 'codex' # keep this\nauth = 'subscription'\n",
-            "# My settings\ncustom = true\nprofiles = { personal = { agent = 'codex', auth = 'subscription' } } # keep this\n",
+            "# My settings\ncustom = true\n[profiles.personal]\nid = '8d8ed9a1-9c7e-4ad3-a69a-6e9dc9a05745'\nagent = 'codex' # keep this\nauth = 'subscription'\n",
+            "# My settings\ncustom = true\nprofiles = { personal = { id = '8d8ed9a1-9c7e-4ad3-a69a-6e9dc9a05745', agent = 'codex', auth = 'subscription' } } # keep this\n",
         ] {
             std::fs::write(&path, input)?;
             add_profile(&path, "second", subscription_profile())?;
@@ -396,14 +379,9 @@ mod tests {
 
         let missing = directory.path().join("new/config.toml");
         assert!(add_profile(&missing, "   ", subscription_profile()).is_err());
-        assert!(
-            add_profile(
-                &missing,
-                "new",
-                Profile::new(Agent::Codex, AuthMode::Api, Some(" ".into()))
-            )
-            .is_err()
-        );
+        let mut invalid = subscription_profile();
+        invalid.id = uuid::Uuid::nil();
+        assert!(add_profile(&missing, "new", invalid).is_err());
         assert!(!missing.exists());
         assert!(load(&directory.path().join("new")).is_err());
         Ok(())

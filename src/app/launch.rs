@@ -14,13 +14,8 @@ pub(crate) fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {
     let key = match profile.auth {
         AuthMode::Subscription => None,
         AuthMode::Api => {
-            let key = match &profile.api_key_env {
-                Some(variable) => std::env::var(variable).map_err(|_| {
-                    anyhow::anyhow!("Set environment variable '{variable}' for profile '{name}'")
-                })?,
-                None => crate::credentials::load(profile.id)
-                    .with_context(|| format!("Could not load API key for profile '{name}'"))?,
-            };
+            let key = crate::credentials::load(profile.id)
+                .with_context(|| format!("Could not load API key for profile '{name}'"))?;
             anyhow::ensure!(
                 !key.trim().is_empty(),
                 "API key for profile '{name}' is empty"
@@ -30,6 +25,7 @@ pub(crate) fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {
     };
 
     let directory = paths::profile_dir(path, profile);
+    paths::create_dir(&directory)?;
     Ok(crate::agents::command(profile, &directory, key.as_deref()))
 }
 
@@ -47,15 +43,17 @@ mod tests {
     }
 
     #[test]
-    fn reports_missing_api_key_variable() -> anyhow::Result<()> {
+    fn reports_missing_saved_api_key() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        let variable = format!("ACLI_TEST_{}", uuid::Uuid::new_v4().simple());
-        let profile = Profile::new(Agent::Codex, AuthMode::Api, Some(variable.clone()));
+        let profile = Profile::new(Agent::Codex, AuthMode::Api);
         storage::add_profile(&path, "work", profile)?;
         let error = prepare(&path, "work").unwrap_err();
-        assert!(error.to_string().contains(&variable));
-        assert!(error.to_string().contains("work"));
+        assert_eq!(
+            error.to_string(),
+            "Could not load API key for profile 'work'"
+        );
+        assert!(format!("{error:#}").contains("No API key saved"));
         Ok(())
     }
 
@@ -63,10 +61,12 @@ mod tests {
     fn prepares_profile_directory_without_changing_working_directory() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        let profile = Profile::new(Agent::Codex, AuthMode::Subscription, None);
+        let profile = Profile::new(Agent::Codex, AuthMode::Subscription);
         let expected = paths::profile_dir(&path, &profile);
         storage::add_profile(&path, "personal", profile)?;
+        std::fs::remove_dir(&expected)?;
         let command = prepare(&path, "personal")?;
+        assert!(expected.is_dir());
         assert_eq!(command.get_program(), "codex");
         assert!(command.get_current_dir().is_none());
         assert!(

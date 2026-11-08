@@ -118,7 +118,7 @@ mod tests {
                 .map(|index| {
                     (
                         format!("profile-{index:03}"),
-                        Profile::new(Agent::Codex, AuthMode::Subscription, None),
+                        Profile::new(Agent::Codex, AuthMode::Subscription),
                     )
                 })
                 .collect(),

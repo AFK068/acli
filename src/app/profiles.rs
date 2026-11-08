@@ -23,7 +23,7 @@ pub(crate) fn add(
         "Profile '{name}' has a duplicate ID"
     );
 
-    let needs_key = profile.auth == AuthMode::Api && profile.api_key_env.is_none();
+    let needs_key = profile.auth == AuthMode::Api;
     if needs_key {
         credentials::save(id, key.context("API key is required")?)?;
     }
@@ -41,7 +41,7 @@ pub(crate) fn add(
 
 pub(crate) fn remove(path: &Path, name: &str) -> anyhow::Result<()> {
     let profile = storage::remove_profile(path, name)?;
-    if profile.auth == AuthMode::Api && profile.api_key_env.is_none() {
+    if profile.auth == AuthMode::Api {
         credentials::delete(profile.id).with_context(|| {
             format!("Profile '{name}' was removed, but its saved API key could not be deleted")
         })?;
@@ -55,7 +55,7 @@ mod tests {
     use crate::config::Agent;
 
     fn api_profile() -> Profile {
-        Profile::new(Agent::Codex, AuthMode::Api, None)
+        Profile::new(Agent::Codex, AuthMode::Api)
     }
 
     #[test]
@@ -67,7 +67,6 @@ mod tests {
         add(&path, "work", profile, Some("test-secret"))?;
         let saved = std::fs::read_to_string(&path)?;
         assert!(!saved.contains("test-secret"));
-        assert!(!saved.contains("api_key_env"));
         assert_eq!(credentials::load(id)?, "test-secret");
 
         let command = crate::app::launch::prepare(&path, "work")?;
@@ -158,19 +157,6 @@ mod tests {
     }
 
     #[test]
-    fn keeps_environment_profiles_supported() -> anyhow::Result<()> {
-        let directory = tempfile::tempdir()?;
-        let path = directory.path().join("config.toml");
-        let profile = Profile::new(Agent::Codex, AuthMode::Api, Some("WORK_KEY".into()));
-        add(&path, "work", profile, None)?;
-        let config = storage::load(&path)?;
-        assert_eq!(
-            config.get_profile("work").unwrap().api_key_env.as_deref(),
-            Some("WORK_KEY")
-        );
-        Ok(())
-    }
-    #[test]
     fn removes_profile_and_its_saved_key() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
@@ -195,7 +181,7 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
         for profile in [
-            Profile::new(Agent::Codex, AuthMode::Subscription, None),
+            Profile::new(Agent::Codex, AuthMode::Subscription),
             api_profile(),
         ] {
             storage::add_profile(&path, "work", profile)?;

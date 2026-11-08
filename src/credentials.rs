@@ -31,9 +31,7 @@ pub(crate) fn delete(id: Uuid) -> anyhow::Result<()> {
 
 #[cfg(not(test))]
 fn entry(id: Uuid) -> anyhow::Result<keyring::Entry> {
-    keyring::Entry::new("acli", &id.to_string()).context(
-        "System credential store is unavailable. Unlock it or configure api_key_env instead",
-    )
+    keyring::Entry::new("acli", &id.to_string()).context("System credential store is unavailable")
 }
 
 #[cfg(test)]

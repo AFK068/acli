@@ -20,7 +20,7 @@ mod tests {
     #[test]
     fn selects_profile_agent() {
         for (agent, program) in [(Agent::Codex, "codex"), (Agent::ClaudeCode, "claude")] {
-            let profile = Profile::new(agent, AuthMode::Subscription, None);
+            let profile = Profile::new(agent, AuthMode::Subscription);
             let command = command(&profile, Path::new("profile-data"), None);
             assert_eq!(command.get_program(), program);
         }

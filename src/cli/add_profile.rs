@@ -38,7 +38,7 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
         None
     };
 
-    let profile = Profile::new(agent, auth, None);
+    let profile = Profile::new(agent, auth);
     profiles::add(path, name, profile, key.as_deref())?;
     println!("Profile '{name}' saved to {}", path.display());
     Ok(())

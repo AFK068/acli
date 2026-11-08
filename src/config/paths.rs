@@ -1,6 +1,6 @@
 use anyhow::Context;
 
-use super::{Config, Profile};
+use super::Profile;
 
 pub(crate) fn default_path() -> anyhow::Result<std::path::PathBuf> {
     let directories = directories::ProjectDirs::from("", "", "acli")
@@ -15,20 +15,13 @@ pub(crate) fn profile_dir(path: &std::path::Path, profile: &Profile) -> std::pat
         .join(profile.agent.to_string())
 }
 
-pub(super) fn create_profile_dirs(path: &std::path::Path, config: &Config) -> anyhow::Result<()> {
-    for profile in config.profiles.values() {
-        create_dir(&profile_dir(path, profile))?;
-    }
-    Ok(())
-}
-
 pub(super) fn parent_dir(path: &std::path::Path) -> &std::path::Path {
     path.parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| std::path::Path::new("."))
 }
 
-pub(super) fn create_dir(path: &std::path::Path) -> anyhow::Result<()> {
+pub(crate) fn create_dir(path: &std::path::Path) -> anyhow::Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
