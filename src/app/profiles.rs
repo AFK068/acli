@@ -61,17 +61,24 @@ mod tests {
     fn saves_key_separately_and_uses_it_for_launch() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        let profile = api_profile();
-        let id = profile.id;
-        add(&path, "work", profile, Some("test-secret"))?;
-        let saved = std::fs::read_to_string(&path)?;
-        assert!(!saved.contains("test-secret"));
-        assert_eq!(credentials::load(id)?, "test-secret");
+        for (agent, variable) in [
+            (Agent::Codex, "ACLI_API_KEY"),
+            (Agent::ClaudeCode, "ANTHROPIC_API_KEY"),
+            (Agent::Kimi, "KIMI_MODEL_API_KEY"),
+        ] {
+            let name = agent.to_string();
+            let profile = Profile::new(agent, AuthMode::Api);
+            let id = profile.id;
+            add(&path, &name, profile, Some("test-secret"))?;
+            let saved = std::fs::read_to_string(&path)?;
+            assert!(!saved.contains("test-secret"));
+            assert_eq!(credentials::load(id)?, "test-secret");
 
-        let command = crate::app::launch::prepare(&path, "work")?;
-        assert!(command.get_envs().any(|(name, value)| {
-            name == "ACLI_API_KEY" && value == Some(std::ffi::OsStr::new("test-secret"))
-        }));
+            let command = crate::app::launch::prepare(&path, &name)?;
+            assert!(command.get_envs().any(|(name, value)| {
+                name == variable && value == Some(std::ffi::OsStr::new("test-secret"))
+            }));
+        }
         Ok(())
     }
 

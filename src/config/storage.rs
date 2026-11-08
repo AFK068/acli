@@ -119,6 +119,26 @@ mod tests {
     }
 
     #[test]
+    fn saves_and_loads_every_agent_with_its_own_directory() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        for agent in [Agent::Codex, Agent::ClaudeCode, Agent::Kimi] {
+            let name = agent.to_string();
+            let profile = Profile::new(agent, AuthMode::Native);
+            let id = profile.id;
+            let expected = profile_dir(&path, &profile);
+            add_profile(&path, &name, profile)?;
+            let config = load(&path)?;
+            let loaded = config.profile(&name)?;
+            assert_eq!(loaded.agent.to_string(), name);
+            assert_eq!(loaded.id, id);
+            assert_eq!(profile_dir(&path, loaded), expected);
+            assert!(expected.is_dir());
+        }
+        Ok(())
+    }
+
+    #[test]
     fn loading_configuration_does_not_write_files_or_create_directories() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let missing = directory.path().join("missing/config.toml");

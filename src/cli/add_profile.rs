@@ -17,7 +17,11 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
         .interact_text()?;
     let name = name.trim();
 
-    let agents = [("Codex", Agent::Codex), ("Claude Code", Agent::ClaudeCode)];
+    let agents = [
+        ("Codex", Agent::Codex),
+        ("Claude Code", Agent::ClaudeCode),
+        ("Kimi Code", Agent::Kimi),
+    ];
     let modes = [("Native", AuthMode::Native), ("API key", AuthMode::Api)];
     let Some(agent) = select("Agent", &agents)? else {
         return Ok(());
@@ -26,6 +30,9 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
         return Ok(());
     };
     let key = if auth == AuthMode::Api {
+        if matches!(agent, Agent::Kimi) {
+            println!("Use a Kimi Code API key (api.kimi.com), not a Moonshot Platform key.");
+        }
         Some(ask_key()?)
     } else {
         None

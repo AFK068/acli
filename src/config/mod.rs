@@ -83,6 +83,7 @@ impl Profile {
 pub(crate) enum Agent {
     ClaudeCode,
     Codex,
+    Kimi,
 }
 
 impl fmt::Display for Agent {
@@ -90,6 +91,7 @@ impl fmt::Display for Agent {
         let name = match self {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
+            Self::Kimi => "kimi",
         };
         formatter.write_str(name)
     }
