@@ -1,8 +1,7 @@
-use crate::config::AuthMode;
 use std::path::Path;
 use std::process::Command;
 
-pub(super) fn command(auth: &AuthMode, directory: &Path, key: Option<&str>) -> Command {
+pub(super) fn command(directory: &Path, key: Option<&str>) -> Command {
     let mut command = Command::new("claude");
     command.env("CLAUDE_CONFIG_DIR", directory);
 
@@ -20,16 +19,12 @@ pub(super) fn command(auth: &AuthMode, directory: &Path, key: Option<&str>) -> C
         command.env_remove(name);
     }
 
-    match auth {
-        AuthMode::Native => {
-            command.args(["--settings", r#"{"forceLoginMethod":"claudeai"}"#]);
-        }
-        AuthMode::Api => {
-            command.args(["--settings", r#"{"forceLoginMethod":"console"}"#]);
-            if let Some(key) = key {
-                command.env("ANTHROPIC_API_KEY", key);
-            }
-        }
+    if let Some(key) = key {
+        command
+            .args(["--settings", r#"{"forceLoginMethod":"console"}"#])
+            .env("ANTHROPIC_API_KEY", key);
+    } else {
+        command.args(["--settings", r#"{"forceLoginMethod":"claudeai"}"#]);
     }
     command
 }
@@ -43,7 +38,7 @@ mod tests {
     #[test]
     fn native_uses_its_own_login_and_directory() {
         let directory = Path::new("profile-data");
-        let command = command(&AuthMode::Native, directory, None);
+        let command = command(directory, None);
         let environment: BTreeMap<_, _> = command.get_envs().collect();
         assert_eq!(
             environment[OsStr::new("CLAUDE_CONFIG_DIR")],
@@ -59,11 +54,7 @@ mod tests {
 
     #[test]
     fn api_key_is_passed_in_environment_only() {
-        let command = command(
-            &AuthMode::Api,
-            Path::new("profile-data"),
-            Some("test-secret"),
-        );
+        let command = command(Path::new("profile-data"), Some("test-secret"));
         let environment: BTreeMap<_, _> = command.get_envs().collect();
         assert_eq!(
             environment[OsStr::new("ANTHROPIC_API_KEY")],
@@ -71,6 +62,11 @@ mod tests {
         );
         assert_eq!(environment[OsStr::new("ANTHROPIC_AUTH_TOKEN")], None);
         assert_eq!(environment[OsStr::new("CLAUDE_CODE_OAUTH_TOKEN")], None);
+        assert!(
+            command
+                .get_args()
+                .any(|arg| arg == r#"{"forceLoginMethod":"console"}"#)
+        );
         assert!(
             command
                 .get_args()

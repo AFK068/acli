@@ -24,7 +24,11 @@ pub(crate) fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {
 
     let directory = paths::profile_dir(path, profile);
     paths::create_dir(&directory)?;
-    Ok(crate::agents::command(profile, &directory, key.as_deref()))
+    Ok(crate::agents::command(
+        profile.agent,
+        &directory,
+        key.as_deref(),
+    ))
 }
 
 #[cfg(test)]

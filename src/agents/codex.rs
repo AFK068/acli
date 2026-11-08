@@ -1,4 +1,3 @@
-use crate::config::AuthMode;
 use std::path::Path;
 use std::process::Command;
 
@@ -9,7 +8,7 @@ const API_PROVIDER: &str = concat!(
     "requires_openai_auth=false}",
 );
 
-pub(super) fn command(auth: &AuthMode, directory: &Path, key: Option<&str>) -> Command {
+pub(super) fn command(directory: &Path, key: Option<&str>) -> Command {
     let mut command = Command::new("codex");
     command
         .env("CODEX_HOME", directory)
@@ -24,28 +23,24 @@ pub(super) fn command(auth: &AuthMode, directory: &Path, key: Option<&str>) -> C
         command.env_remove(name);
     }
 
-    match auth {
-        AuthMode::Native => {
-            command.args([
-                "-c",
-                r#"model_provider="openai""#,
-                "-c",
-                r#"forced_login_method="chatgpt""#,
-            ]);
-        }
-        AuthMode::Api => {
-            command.args([
+    if let Some(key) = key {
+        command
+            .args([
                 "-c",
                 r#"model_provider="acli""#,
                 "-c",
                 r#"forced_login_method="api""#,
                 "-c",
                 API_PROVIDER,
-            ]);
-        }
-    }
-    if let Some(key) = key {
-        command.env("ACLI_API_KEY", key);
+            ])
+            .env("ACLI_API_KEY", key);
+    } else {
+        command.args([
+            "-c",
+            r#"model_provider="openai""#,
+            "-c",
+            r#"forced_login_method="chatgpt""#,
+        ]);
     }
     command
 }
@@ -59,7 +54,7 @@ mod tests {
     #[test]
     fn native_uses_its_own_login_and_directory() {
         let directory = Path::new("profile-data");
-        let command = command(&AuthMode::Native, directory, None);
+        let command = command(directory, None);
         let environment: BTreeMap<_, _> = command.get_envs().collect();
         assert_eq!(
             environment[OsStr::new("CODEX_HOME")],
@@ -75,15 +70,16 @@ mod tests {
 
     #[test]
     fn api_key_is_passed_in_environment_only() {
-        let command = command(
-            &AuthMode::Api,
-            Path::new("profile-data"),
-            Some("test-secret"),
-        );
+        let command = command(Path::new("profile-data"), Some("test-secret"));
         let environment: BTreeMap<_, _> = command.get_envs().collect();
         assert_eq!(
             environment[OsStr::new("ACLI_API_KEY")],
             Some(OsStr::new("test-secret"))
+        );
+        assert!(
+            command
+                .get_args()
+                .any(|arg| arg == r#"forced_login_method="api""#)
         );
         assert!(
             command

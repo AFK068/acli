@@ -50,11 +50,8 @@ fn ask_key() -> anyhow::Result<String> {
     dialoguer::Password::with_theme(&dialoguer::theme::ColorfulTheme::default())
         .with_prompt("API key (saved in the system credential store)")
         .validate_with(|key: &String| {
-            if key.trim().is_empty() {
-                Err("API key must not be empty")
-            } else {
-                Ok(())
-            }
+            anyhow::ensure!(!key.trim().is_empty(), "API key must not be empty");
+            Ok(())
         })
         .interact()
         .map_err(Into::into)
