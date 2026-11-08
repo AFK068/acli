@@ -21,12 +21,12 @@ impl Cli {
                 println!("Profile '{name}' removed");
                 Ok(())
             }
-            Command::Run { name } => run_agent::run(path, name),
             Command::Profile(ProfileCommand::Rename { name, new_name }) => {
                 crate::app::profiles::rename(path, name, new_name)?;
                 println!("Profile '{name}' renamed to '{new_name}'");
                 Ok(())
             }
+            Command::Run { name } => run_agent::run(path, name),
         }
     }
 }
