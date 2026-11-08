@@ -8,6 +8,7 @@ mod environment;
 mod kimi;
 mod opencode;
 mod pi;
+mod zcode;
 
 // A key selects API authentication; None selects the agent's native login.
 pub(crate) fn command(agent: Agent, directory: &Path, key: Option<&str>) -> Command {
@@ -17,6 +18,7 @@ pub(crate) fn command(agent: Agent, directory: &Path, key: Option<&str>) -> Comm
         Agent::Kimi => kimi::command(directory, key),
         Agent::OpenCode => opencode::command(directory),
         Agent::Pi => pi::command(directory),
+        Agent::ZCode => zcode::command(directory),
     }
 }
 
@@ -32,6 +34,7 @@ mod tests {
             (Agent::Kimi, "kimi"),
             (Agent::OpenCode, "opencode"),
             (Agent::Pi, "pi"),
+            (Agent::ZCode, "zcode"),
         ] {
             let command = command(agent, Path::new("profile-data"), None);
             assert_eq!(command.get_program(), program);

@@ -23,6 +23,7 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
         ("Kimi Code", Agent::Kimi),
         ("OpenCode", Agent::OpenCode),
         ("Pi", Agent::Pi),
+        ("ZCode (Z.ai)", Agent::ZCode),
     ];
     let modes = [("Native", AuthMode::Native), ("API key", AuthMode::Api)];
     let Some(agent) = select("Agent", &agents)? else {
