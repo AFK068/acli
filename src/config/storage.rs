@@ -40,6 +40,29 @@ pub(crate) fn remove_profile(path: &std::path::Path, name: &str) -> anyhow::Resu
     Ok(profile)
 }
 
+pub(crate) fn rename_profile(
+    path: &std::path::Path,
+    name: &str,
+    new_name: &str,
+) -> anyhow::Result<()> {
+    let _lock = lock(path)?;
+    let (config, mut document) = read_config(path)?;
+    config
+        .get_profile(name)
+        .with_context(|| format!("Profile '{name}' not found"))?;
+    config.validate_profile_name(new_name)?;
+
+    let profiles = document
+        .get_mut("profiles")
+        .and_then(toml_edit::Item::as_table_like_mut)
+        .context("Expected profiles to be a TOML table")?;
+    let profile = profiles
+        .remove(name)
+        .with_context(|| format!("Profile '{name}' not found"))?;
+    profiles.insert(new_name, profile);
+    write(path, &document.to_string())
+}
+
 fn read_config(path: &std::path::Path) -> anyhow::Result<(Config, toml_edit::DocumentMut)> {
     let input = read(path)?;
     let config =
@@ -244,13 +267,10 @@ mod tests {
         let old_dir = profile_dir(&path, old);
         std::fs::write(old_dir.join("history.txt"), "saved history")?;
 
-        let mut document: toml_edit::DocumentMut = std::fs::read_to_string(&path)?.parse()?;
-        let profiles = document["profiles"].as_table_mut().unwrap();
-        let profile = profiles.remove("old").unwrap();
-        profiles.insert("renamed", profile);
-        std::fs::write(&path, document.to_string())?;
+        rename_profile(&path, "old", "renamed")?;
 
         let renamed = load(&path)?;
+        assert!(renamed.get_profile("old").is_none());
         let renamed = renamed.get_profile("renamed").unwrap();
         assert_eq!(renamed.id, old.id);
         assert_eq!(profile_dir(&path, renamed), old_dir);
@@ -258,6 +278,78 @@ mod tests {
             std::fs::read_to_string(old_dir.join("history.txt"))?,
             "saved history"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn rename_rejects_missing_profile() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        let error = rename_profile(&path, "missing", "new").unwrap_err();
+        assert_eq!(error.to_string(), "Profile 'missing' not found");
+        assert!(!path.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn rename_rejects_taken_names_without_changing_file() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        add_profile(&path, "work", subscription_profile())?;
+        add_profile(&path, "personal", subscription_profile())?;
+        let saved = std::fs::read(&path)?;
+        for name in ["personal", "work"] {
+            let error = rename_profile(&path, "work", name).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("Profile '{name}' already exists")
+            );
+            assert_eq!(std::fs::read(&path)?, saved);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rename_rejects_blank_names_without_changing_file() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        add_profile(&path, "work", subscription_profile())?;
+        let saved = std::fs::read(&path)?;
+        for name in ["", " \t\n"] {
+            let error = rename_profile(&path, "work", name).unwrap_err();
+            assert_eq!(error.to_string(), "Profile name must not be empty");
+            assert_eq!(std::fs::read(&path)?, saved);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rename_preserves_toml_comments_and_other_profiles() -> anyhow::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("config.toml");
+        let id = uuid::Uuid::new_v4();
+        for input in [
+            format!(
+                "# My settings\ncustom = true\n[profiles.old] # Profile comment\nid = '{id}'\nagent = 'codex' # Agent comment\nauth = 'subscription'\n"
+            ),
+            format!(
+                "# My settings\ncustom = true\nprofiles = {{ old = {{ id = '{id}', agent = 'codex', auth = 'subscription' }} }} # Profile comment\n"
+            ),
+        ] {
+            std::fs::write(&path, input)?;
+            add_profile(&path, "other", subscription_profile())?;
+            let other_id = load(&path)?.get_profile("other").unwrap().id;
+            rename_profile(&path, "old", "work.test")?;
+            let config = load(&path)?;
+            assert_eq!(config.profiles.len(), 2);
+            assert!(config.get_profile("old").is_none());
+            assert_eq!(config.get_profile("work.test").unwrap().id, id);
+            assert_eq!(config.get_profile("other").unwrap().id, other_id);
+            let saved = std::fs::read_to_string(&path)?;
+            assert!(saved.contains("# My settings"));
+            assert!(saved.contains("# Profile comment"));
+            assert!(saved.contains("custom = true"));
+        }
         Ok(())
     }
 

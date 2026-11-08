@@ -22,6 +22,11 @@ impl Cli {
                 Ok(())
             }
             Command::Run { name } => run_agent::run(path, name),
+            Command::Profile(ProfileCommand::Rename { name, new_name }) => {
+                crate::app::profiles::rename(path, name, new_name)?;
+                println!("Profile '{name}' renamed to '{new_name}'");
+                Ok(())
+            }
         }
     }
 }
@@ -43,4 +48,6 @@ enum ProfileCommand {
     Add,
     /// Remove a profile and its saved API key; keep agent data.
     Remove { name: String },
+    /// Rename a profile, keeping its credentials and agent data.
+    Rename { name: String, new_name: String },
 }

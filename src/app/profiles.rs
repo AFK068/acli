@@ -49,6 +49,10 @@ pub(crate) fn remove(path: &Path, name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub(crate) fn rename(path: &Path, name: &str, new_name: &str) -> anyhow::Result<()> {
+    storage::rename_profile(path, name, new_name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,11 +85,7 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
         add(&path, "work", api_profile(), Some("test-secret"))?;
-        let saved = std::fs::read_to_string(&path)?;
-        std::fs::write(
-            &path,
-            saved.replace("[profiles.work]", "[profiles.renamed]"),
-        )?;
+        rename(&path, "work", "renamed")?;
         let command = crate::app::launch::prepare(&path, "renamed")?;
         assert!(command.get_envs().any(|(name, value)| {
             name == "ACLI_API_KEY" && value == Some(std::ffi::OsStr::new("test-secret"))
