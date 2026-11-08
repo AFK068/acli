@@ -14,22 +14,17 @@ pub(crate) fn add(
     profile: Profile,
     key: Option<&str>,
 ) -> anyhow::Result<()> {
-    let config = load(path)?;
-    config.validate_profile_name(name)?;
-    profile.validate(name)?;
+    load(path)?.validate_new_profile(name, &profile)?;
+    let key = match profile.auth {
+        AuthMode::Api => Some(key.context("API key is required")?),
+        AuthMode::Subscription => None,
+    };
     let id = profile.id;
-    anyhow::ensure!(
-        !config.profiles.values().any(|existing| existing.id == id),
-        "Profile '{name}' has a duplicate ID"
-    );
-
-    let needs_key = profile.auth == AuthMode::Api;
-    if needs_key {
-        credentials::save(id, key.context("API key is required")?)?;
+    if let Some(key) = key {
+        credentials::save(id, key)?;
     }
-
     if let Err(error) = storage::add_profile(path, name, profile) {
-        if needs_key {
+        if key.is_some() {
             credentials::delete(id).with_context(|| {
                 format!("{error}; could not remove the unsaved profile's API key")
             })?;

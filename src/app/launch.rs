@@ -7,9 +7,7 @@ use crate::config::{AuthMode, paths};
 
 pub(crate) fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {
     let config = profiles::load(path)?;
-    let profile = config
-        .get_profile(name)
-        .with_context(|| format!("Profile '{name}' not found"))?;
+    let profile = config.profile(name)?;
 
     let key = match profile.auth {
         AuthMode::Subscription => None,

@@ -1,61 +1,41 @@
 use anyhow::Context;
 use std::io::Write;
+use std::path::Path;
 
 use super::{Config, Profile, paths};
 
-pub(crate) fn load(path: &std::path::Path) -> anyhow::Result<Config> {
+pub(crate) fn load(path: &Path) -> anyhow::Result<Config> {
     parse(&read(path)?).with_context(|| format!("Invalid configuration '{}'", path.display()))
 }
 
-pub(crate) fn add_profile(
-    path: &std::path::Path,
-    name: &str,
-    profile: Profile,
-) -> anyhow::Result<()> {
+pub(crate) fn add_profile(path: &Path, name: &str, profile: Profile) -> anyhow::Result<()> {
     let _lock = lock(path)?;
-    let (mut config, mut document) = read_config(path)?;
-    config.validate_profile_name(name)?;
-    let directory = paths::profile_dir(path, &profile);
-    insert_profile(&mut document, name, &profile)?;
-    config.profiles.insert(name.to_owned(), profile);
-    config.validate()?;
-
-    paths::create_dir(&directory)?;
+    let (config, mut document) = read_config(path)?;
+    config.validate_new_profile(name, &profile)?;
+    profiles_table(&mut document)?.insert(name, toml_edit::Item::Table(profile_table(&profile)));
+    paths::create_dir(&paths::profile_dir(path, &profile))?;
     write(path, &document.to_string())
 }
 
-pub(crate) fn remove_profile(path: &std::path::Path, name: &str) -> anyhow::Result<Profile> {
+pub(crate) fn remove_profile(path: &Path, name: &str) -> anyhow::Result<Profile> {
     let _lock = lock(path)?;
     let (mut config, mut document) = read_config(path)?;
     let profile = config
         .profiles
         .remove(name)
         .with_context(|| format!("Profile '{name}' not found"))?;
-    document
-        .get_mut("profiles")
-        .and_then(toml_edit::Item::as_table_like_mut)
-        .context("Expected profiles to be a TOML table")?
-        .remove(name);
+    profiles_table(&mut document)?.remove(name);
     write(path, &document.to_string())?;
     Ok(profile)
 }
 
-pub(crate) fn rename_profile(
-    path: &std::path::Path,
-    name: &str,
-    new_name: &str,
-) -> anyhow::Result<()> {
+pub(crate) fn rename_profile(path: &Path, name: &str, new_name: &str) -> anyhow::Result<()> {
     let _lock = lock(path)?;
     let (config, mut document) = read_config(path)?;
-    config
-        .get_profile(name)
-        .with_context(|| format!("Profile '{name}' not found"))?;
+    config.profile(name)?;
     config.validate_profile_name(new_name)?;
 
-    let profiles = document
-        .get_mut("profiles")
-        .and_then(toml_edit::Item::as_table_like_mut)
-        .context("Expected profiles to be a TOML table")?;
+    let profiles = profiles_table(&mut document)?;
     let profile = profiles
         .remove(name)
         .with_context(|| format!("Profile '{name}' not found"))?;
@@ -63,7 +43,7 @@ pub(crate) fn rename_profile(
     write(path, &document.to_string())
 }
 
-fn read_config(path: &std::path::Path) -> anyhow::Result<(Config, toml_edit::DocumentMut)> {
+fn read_config(path: &Path) -> anyhow::Result<(Config, toml_edit::DocumentMut)> {
     let input = read(path)?;
     let config =
         parse(&input).with_context(|| format!("Invalid configuration '{}'", path.display()))?;
@@ -76,18 +56,14 @@ fn parse(input: &str) -> anyhow::Result<Config> {
     Ok(config)
 }
 
-fn insert_profile(
+fn profiles_table(
     document: &mut toml_edit::DocumentMut,
-    name: &str,
-    profile: &Profile,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<&mut dyn toml_edit::TableLike> {
     document
         .entry("profiles")
         .or_insert(toml_edit::table())
         .as_table_like_mut()
-        .context("Expected profiles to be a TOML table")?
-        .insert(name, toml_edit::Item::Table(profile_table(profile)));
-    Ok(())
+        .context("Expected profiles to be a TOML table")
 }
 
 fn profile_table(profile: &Profile) -> toml_edit::Table {
@@ -98,7 +74,7 @@ fn profile_table(profile: &Profile) -> toml_edit::Table {
     table
 }
 
-fn read(path: &std::path::Path) -> anyhow::Result<String> {
+fn read(path: &Path) -> anyhow::Result<String> {
     match std::fs::read_to_string(path) {
         Ok(input) => Ok(input),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
@@ -108,7 +84,7 @@ fn read(path: &std::path::Path) -> anyhow::Result<String> {
     }
 }
 
-fn write(path: &std::path::Path, contents: &str) -> anyhow::Result<()> {
+fn write(path: &Path, contents: &str) -> anyhow::Result<()> {
     // Replace the original only after the entire new file has been written.
     let mut file = tempfile::NamedTempFile::new_in(paths::parent_dir(path))?;
     file.write_all(contents.as_bytes())?;
@@ -118,7 +94,7 @@ fn write(path: &std::path::Path, contents: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn lock(path: &std::path::Path) -> anyhow::Result<std::fs::File> {
+fn lock(path: &Path) -> anyhow::Result<std::fs::File> {
     // Lock a separate file: replacing config.toml must not release the lock.
     paths::create_dir(paths::parent_dir(path))?;
     let lock_path = path.with_extension("lock");
@@ -169,14 +145,14 @@ mod tests {
         std::fs::write(&path, "# Keep this comment\ncustom = true\n")?;
         add_profile(&path, "work.test", profile)?;
         add_profile(&path, "personal", subscription_profile())?;
-        let remaining_id = load(&path)?.get_profile("personal").unwrap().id;
+        let remaining_id = load(&path)?.profile("personal")?.id;
         std::fs::write(&data, "history")?;
 
         assert_eq!(remove_profile(&path, "work.test")?.id, id);
 
         let config = load(&path)?;
         assert_eq!(config.profiles.len(), 1);
-        assert_eq!(config.get_profile("personal").unwrap().id, remaining_id);
+        assert_eq!(config.profile("personal")?.id, remaining_id);
         let saved = std::fs::read_to_string(&path)?;
         assert!(saved.contains("# Keep this comment"));
         assert!(saved.contains("custom = true"));
@@ -225,17 +201,16 @@ mod tests {
 
         let config = load(&path)?;
         assert_eq!(config.profiles.len(), 2);
-        assert!(config.get_profile("personal").is_some());
-        let work = config.get_profile("work.test").expect("new profile");
+        let work = config.profile("work.test")?;
         assert!(matches!(work.agent, Agent::ClaudeCode));
         assert_eq!(work.auth, AuthMode::Api);
-        let personal = config.get_profile("personal").unwrap();
+        let personal = config.profile("personal")?;
         assert_ne!(personal.id, work.id);
         for profile in config.profiles.values() {
             assert!(profile_dir(&path, profile).is_dir());
         }
         let reloaded = load(&path)?;
-        assert_eq!(reloaded.get_profile("work.test").unwrap().id, work.id);
+        assert_eq!(reloaded.profile("work.test")?.id, work.id);
         Ok(())
     }
 
@@ -263,15 +238,15 @@ mod tests {
         let path = directory.path().join("config.toml");
         add_profile(&path, "old", subscription_profile())?;
         let config = load(&path)?;
-        let old = config.get_profile("old").unwrap();
+        let old = config.profile("old")?;
         let old_dir = profile_dir(&path, old);
         std::fs::write(old_dir.join("history.txt"), "saved history")?;
 
         rename_profile(&path, "old", "renamed")?;
 
         let renamed = load(&path)?;
-        assert!(renamed.get_profile("old").is_none());
-        let renamed = renamed.get_profile("renamed").unwrap();
+        assert!(renamed.profile("old").is_err());
+        let renamed = renamed.profile("renamed")?;
         assert_eq!(renamed.id, old.id);
         assert_eq!(profile_dir(&path, renamed), old_dir);
         assert_eq!(
@@ -338,13 +313,13 @@ mod tests {
         ] {
             std::fs::write(&path, input)?;
             add_profile(&path, "other", subscription_profile())?;
-            let other_id = load(&path)?.get_profile("other").unwrap().id;
+            let other_id = load(&path)?.profile("other")?.id;
             rename_profile(&path, "old", "work.test")?;
             let config = load(&path)?;
             assert_eq!(config.profiles.len(), 2);
-            assert!(config.get_profile("old").is_none());
-            assert_eq!(config.get_profile("work.test").unwrap().id, id);
-            assert_eq!(config.get_profile("other").unwrap().id, other_id);
+            assert!(config.profile("old").is_err());
+            assert_eq!(config.profile("work.test")?.id, id);
+            assert_eq!(config.profile("other")?.id, other_id);
             let saved = std::fs::read_to_string(&path)?;
             assert!(saved.contains("# My settings"));
             assert!(saved.contains("# Profile comment"));
@@ -402,7 +377,7 @@ mod tests {
                 std::thread::spawn(move || -> anyhow::Result<uuid::Uuid> {
                     barrier.wait();
                     let config = load(&path)?;
-                    let id = config.get_profile("old").unwrap().id;
+                    let id = config.profile("old")?.id;
                     add_profile(&path, &format!("new-{index}"), subscription_profile())?;
                     Ok(id)
                 })
@@ -415,7 +390,7 @@ mod tests {
         assert_eq!(ids[0], ids[1]);
         let config = load(&path)?;
         assert_eq!(config.profiles.len(), 3);
-        assert_eq!(config.get_profile("old").unwrap().id, ids[0]);
+        assert_eq!(config.profile("old")?.id, ids[0]);
         Ok(())
     }
 

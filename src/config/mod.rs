@@ -1,3 +1,4 @@
+use anyhow::Context;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
@@ -28,14 +29,29 @@ impl Config {
     pub(crate) fn validate_profile_name(&self, name: &str) -> anyhow::Result<()> {
         anyhow::ensure!(!name.trim().is_empty(), "Profile name must not be empty");
         anyhow::ensure!(
-            self.get_profile(name).is_none(),
+            !self.profiles.contains_key(name),
             "Profile '{name}' already exists"
         );
         Ok(())
     }
 
-    pub(crate) fn get_profile(&self, name: &str) -> Option<&Profile> {
-        self.profiles.get(name)
+    pub(crate) fn profile(&self, name: &str) -> anyhow::Result<&Profile> {
+        self.profiles
+            .get(name)
+            .with_context(|| format!("Profile '{name}' not found"))
+    }
+
+    pub(crate) fn validate_new_profile(&self, name: &str, profile: &Profile) -> anyhow::Result<()> {
+        self.validate_profile_name(name)?;
+        profile.validate(name)?;
+        anyhow::ensure!(
+            !self
+                .profiles
+                .values()
+                .any(|existing| existing.id == profile.id),
+            "Profile '{name}' has a duplicate ID"
+        );
+        Ok(())
     }
 }
 
@@ -62,7 +78,7 @@ impl Profile {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Agent {
     ClaudeCode,
@@ -79,7 +95,7 @@ impl fmt::Display for Agent {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum AuthMode {
     Subscription,
@@ -135,14 +151,14 @@ auth = "api"
         )?;
 
         config.validate()?;
-        let personal = config.get_profile("personal").expect("personal profile");
+        let personal = config.profile("personal")?;
         assert!(matches!(personal.agent, Agent::ClaudeCode));
         assert_eq!(personal.auth, AuthMode::Subscription);
 
-        let work = config.get_profile("work").expect("work profile");
+        let work = config.profile("work")?;
         assert!(matches!(work.agent, Agent::Codex));
         assert_eq!(work.auth, AuthMode::Api);
-        assert!(config.get_profile("missing").is_none());
+        assert!(config.profile("missing").is_err());
         Ok(())
     }
 
