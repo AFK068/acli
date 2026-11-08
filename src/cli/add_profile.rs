@@ -18,10 +18,7 @@ pub(super) fn run(path: &std::path::Path) -> anyhow::Result<()> {
     let name = name.trim();
 
     let agents = [("Codex", Agent::Codex), ("Claude Code", Agent::ClaudeCode)];
-    let modes = [
-        ("Subscription", AuthMode::Subscription),
-        ("API key", AuthMode::Api),
-    ];
+    let modes = [("Native", AuthMode::Native), ("API key", AuthMode::Api)];
     let Some(agent) = select("Agent", &agents)? else {
         return Ok(());
     };

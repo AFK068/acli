@@ -96,7 +96,7 @@ fn insert_widget<B: ratatui::backend::Backend>(
 
 fn profile_row<'a>(name: &'a str, profile: &Profile) -> ratatui::widgets::Row<'a> {
     let color = match profile.auth {
-        AuthMode::Subscription => ratatui::style::Color::Magenta,
+        AuthMode::Native => ratatui::style::Color::Magenta,
         AuthMode::Api => ratatui::style::Color::Cyan,
     };
     ratatui::widgets::Row::new([
@@ -118,7 +118,7 @@ mod tests {
                 .map(|index| {
                     (
                         format!("profile-{index:03}"),
-                        Profile::new(Agent::Codex, AuthMode::Subscription),
+                        Profile::new(Agent::Codex, AuthMode::Native),
                     )
                 })
                 .collect(),

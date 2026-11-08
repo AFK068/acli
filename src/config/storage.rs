@@ -114,8 +114,8 @@ mod tests {
     use super::*;
     use crate::config::{Agent, AuthMode, paths::profile_dir};
 
-    fn subscription_profile() -> Profile {
-        Profile::new(Agent::Codex, AuthMode::Subscription)
+    fn native_profile() -> Profile {
+        Profile::new(Agent::Codex, AuthMode::Native)
     }
 
     #[test]
@@ -139,12 +139,12 @@ mod tests {
     fn removes_only_selected_profile_and_keeps_agent_data() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        let profile = subscription_profile();
+        let profile = native_profile();
         let id = profile.id;
         let data = profile_dir(&path, &profile).join("history.txt");
         std::fs::write(&path, "# Keep this comment\ncustom = true\n")?;
         add_profile(&path, "work.test", profile)?;
-        add_profile(&path, "personal", subscription_profile())?;
+        add_profile(&path, "personal", native_profile())?;
         let remaining_id = load(&path)?.profile("personal")?.id;
         std::fs::write(&data, "history")?;
 
@@ -167,7 +167,7 @@ mod tests {
         let error = remove_profile(&path, "missing").unwrap_err();
         assert_eq!(error.to_string(), "Profile 'missing' not found");
         assert!(!path.exists());
-        add_profile(&path, "personal", subscription_profile())?;
+        add_profile(&path, "personal", native_profile())?;
         let saved = std::fs::read(&path)?;
         assert!(remove_profile(&path, "missing").is_err());
         assert_eq!(std::fs::read(&path)?, saved);
@@ -192,7 +192,7 @@ mod tests {
         assert!(load(&path)?.profiles.is_empty());
         assert!(!path.exists());
 
-        add_profile(&path, "personal", subscription_profile())?;
+        add_profile(&path, "personal", native_profile())?;
         add_profile(
             &path,
             "work.test",
@@ -219,13 +219,13 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
         for input in [
-            "# Keep this\n[profiles.old]\nagent = 'codex'\nauth = 'subscription'\n",
-            "# Keep this\nprofiles = { old = { agent = 'codex', auth = 'subscription' } }\n",
+            "# Keep this\n[profiles.old]\nagent = 'codex'\nauth = 'native'\n",
+            "# Keep this\nprofiles = { old = { agent = 'codex', auth = 'native' } }\n",
         ] {
             std::fs::write(&path, input)?;
             let error = load(&path).err().expect("missing ID must be rejected");
             assert!(format!("{error:#}").contains("missing field `id`"));
-            assert!(add_profile(&path, "new", subscription_profile()).is_err());
+            assert!(add_profile(&path, "new", native_profile()).is_err());
             assert!(remove_profile(&path, "old").is_err());
             assert_eq!(std::fs::read_to_string(&path)?, input);
         }
@@ -236,7 +236,7 @@ mod tests {
     fn renaming_a_profile_keeps_its_directory_and_data() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        add_profile(&path, "old", subscription_profile())?;
+        add_profile(&path, "old", native_profile())?;
         let config = load(&path)?;
         let old = config.profile("old")?;
         let old_dir = profile_dir(&path, old);
@@ -270,8 +270,8 @@ mod tests {
     fn rename_rejects_taken_names_without_changing_file() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        add_profile(&path, "work", subscription_profile())?;
-        add_profile(&path, "personal", subscription_profile())?;
+        add_profile(&path, "work", native_profile())?;
+        add_profile(&path, "personal", native_profile())?;
         let saved = std::fs::read(&path)?;
         for name in ["personal", "work"] {
             let error = rename_profile(&path, "work", name).unwrap_err();
@@ -288,7 +288,7 @@ mod tests {
     fn rename_rejects_blank_names_without_changing_file() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        add_profile(&path, "work", subscription_profile())?;
+        add_profile(&path, "work", native_profile())?;
         let saved = std::fs::read(&path)?;
         for name in ["", " \t\n"] {
             let error = rename_profile(&path, "work", name).unwrap_err();
@@ -305,14 +305,14 @@ mod tests {
         let id = uuid::Uuid::new_v4();
         for input in [
             format!(
-                "# My settings\ncustom = true\n[profiles.old] # Profile comment\nid = '{id}'\nagent = 'codex' # Agent comment\nauth = 'subscription'\n"
+                "# My settings\ncustom = true\n[profiles.old] # Profile comment\nid = '{id}'\nagent = 'codex' # Agent comment\nauth = 'native'\n"
             ),
             format!(
-                "# My settings\ncustom = true\nprofiles = {{ old = {{ id = '{id}', agent = 'codex', auth = 'subscription' }} }} # Profile comment\n"
+                "# My settings\ncustom = true\nprofiles = {{ old = {{ id = '{id}', agent = 'codex', auth = 'native' }} }} # Profile comment\n"
             ),
         ] {
             std::fs::write(&path, input)?;
-            add_profile(&path, "other", subscription_profile())?;
+            add_profile(&path, "other", native_profile())?;
             let other_id = load(&path)?.profile("other")?.id;
             rename_profile(&path, "old", "work.test")?;
             let config = load(&path)?;
@@ -337,8 +337,7 @@ mod tests {
             "../../outside",
             "00000000-0000-0000-0000-000000000000",
         ] {
-            let input =
-                format!("[profiles.bad]\nid = '{id}'\nagent = 'codex'\nauth = 'subscription'\n");
+            let input = format!("[profiles.bad]\nid = '{id}'\nagent = 'codex'\nauth = 'native'\n");
             std::fs::write(&path, &input)?;
             assert!(load(&path).is_err());
             assert_eq!(std::fs::read_to_string(&path)?, input);
@@ -347,15 +346,15 @@ mod tests {
 
         let id = uuid::Uuid::new_v4();
         let input = format!(
-            "[profiles.one]\nid = '{id}'\nagent = 'codex'\nauth = 'subscription'\n[profiles.two]\nid = '{id}'\nagent = 'claude-code'\nauth = 'subscription'\n"
+            "[profiles.one]\nid = '{id}'\nagent = 'codex'\nauth = 'native'\n[profiles.two]\nid = '{id}'\nagent = 'claude-code'\nauth = 'native'\n"
         );
         std::fs::write(&path, &input)?;
         assert!(load(&path).is_err());
         assert_eq!(std::fs::read_to_string(&path)?, input);
 
         std::fs::remove_file(&path)?;
-        let first = subscription_profile();
-        let mut second = subscription_profile();
+        let first = native_profile();
+        let mut second = native_profile();
         second.id = first.id;
         add_profile(&path, "first", first)?;
         let saved = std::fs::read(&path)?;
@@ -368,7 +367,7 @@ mod tests {
     fn concurrent_loads_and_additions_keep_ids_and_profiles() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        add_profile(&path, "old", subscription_profile())?;
+        add_profile(&path, "old", native_profile())?;
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
         let handles: Vec<_> = (0..2)
             .map(|index| {
@@ -378,7 +377,7 @@ mod tests {
                     barrier.wait();
                     let config = load(&path)?;
                     let id = config.profile("old")?.id;
-                    add_profile(&path, &format!("new-{index}"), subscription_profile())?;
+                    add_profile(&path, &format!("new-{index}"), native_profile())?;
                     Ok(id)
                 })
             })
@@ -399,7 +398,7 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
         std::fs::write(directory.path().join("profiles"), "not a directory")?;
-        assert!(add_profile(&path, "new", subscription_profile()).is_err());
+        assert!(add_profile(&path, "new", native_profile()).is_err());
         assert!(!path.exists());
         Ok(())
     }
@@ -409,11 +408,11 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
         for input in [
-            "# My settings\ncustom = true\n[profiles.personal]\nid = '8d8ed9a1-9c7e-4ad3-a69a-6e9dc9a05745'\nagent = 'codex' # keep this\nauth = 'subscription'\n",
-            "# My settings\ncustom = true\nprofiles = { personal = { id = '8d8ed9a1-9c7e-4ad3-a69a-6e9dc9a05745', agent = 'codex', auth = 'subscription' } } # keep this\n",
+            "# My settings\ncustom = true\n[profiles.personal]\nid = '8d8ed9a1-9c7e-4ad3-a69a-6e9dc9a05745'\nagent = 'codex' # keep this\nauth = 'native'\n",
+            "# My settings\ncustom = true\nprofiles = { personal = { id = '8d8ed9a1-9c7e-4ad3-a69a-6e9dc9a05745', agent = 'codex', auth = 'native' } } # keep this\n",
         ] {
             std::fs::write(&path, input)?;
-            add_profile(&path, "second", subscription_profile())?;
+            add_profile(&path, "second", native_profile())?;
             let saved = std::fs::read_to_string(&path)?;
             assert!(saved.contains("# My settings"));
             assert!(saved.contains("# keep this"));
@@ -427,9 +426,9 @@ mod tests {
     fn refuses_duplicate_names_without_changing_file() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        add_profile(&path, "work", subscription_profile())?;
+        add_profile(&path, "work", native_profile())?;
         let before = std::fs::read(&path)?;
-        let error = add_profile(&path, "work", subscription_profile()).unwrap_err();
+        let error = add_profile(&path, "work", native_profile()).unwrap_err();
         assert!(error.to_string().contains("already exists"));
         assert_eq!(std::fs::read(&path)?, before);
         Ok(())
@@ -441,12 +440,12 @@ mod tests {
         let path = directory.path().join("config.toml");
         let malformed = "[profiles.work";
         std::fs::write(&path, malformed)?;
-        assert!(add_profile(&path, "new", subscription_profile()).is_err());
+        assert!(add_profile(&path, "new", native_profile()).is_err());
         assert_eq!(std::fs::read_to_string(&path)?, malformed);
 
         let missing = directory.path().join("new/config.toml");
-        assert!(add_profile(&missing, "   ", subscription_profile()).is_err());
-        let mut invalid = subscription_profile();
+        assert!(add_profile(&missing, "   ", native_profile()).is_err());
+        let mut invalid = native_profile();
         invalid.id = uuid::Uuid::nil();
         assert!(add_profile(&missing, "new", invalid).is_err());
         assert!(!missing.exists());

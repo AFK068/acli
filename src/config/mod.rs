@@ -98,14 +98,14 @@ impl fmt::Display for Agent {
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum AuthMode {
-    Subscription,
+    Native,
     Api,
 }
 
 impl fmt::Display for AuthMode {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
-            Self::Subscription => "subscription",
+            Self::Native => "native",
             Self::Api => "api",
         };
         formatter.write_str(name)
@@ -141,7 +141,7 @@ mod tests {
 [profiles.personal]
 id = "8d8ed9a1-9c7e-4ad3-a69a-6e9dc9a05745"
 agent = "claude-code"
-auth = "subscription"
+auth = "native"
 
 [profiles.work]
 id = "5be806a5-2288-4bc4-918c-dc463f751132"
@@ -153,7 +153,7 @@ auth = "api"
         config.validate()?;
         let personal = config.profile("personal")?;
         assert!(matches!(personal.agent, Agent::ClaudeCode));
-        assert_eq!(personal.auth, AuthMode::Subscription);
+        assert_eq!(personal.auth, AuthMode::Native);
 
         let work = config.profile("work")?;
         assert!(matches!(work.agent, Agent::Codex));
@@ -179,7 +179,7 @@ auth = "api"
 
     #[test]
     fn rejects_nil_profile_id() {
-        let mut profile = Profile::new(Agent::Codex, AuthMode::Subscription);
+        let mut profile = Profile::new(Agent::Codex, AuthMode::Native);
         profile.id = uuid::Uuid::nil();
         let error = profile.validate("personal").unwrap_err();
         assert!(error.to_string().contains("empty ID"));
@@ -187,8 +187,8 @@ auth = "api"
 
     #[test]
     fn rejects_duplicate_profile_ids() {
-        let first = Profile::new(Agent::Codex, AuthMode::Subscription);
-        let mut second = Profile::new(Agent::ClaudeCode, AuthMode::Subscription);
+        let first = Profile::new(Agent::Codex, AuthMode::Native);
+        let mut second = Profile::new(Agent::ClaudeCode, AuthMode::Native);
         second.id = first.id;
         let config = Config {
             profiles: BTreeMap::from([("first".into(), first), ("second".into(), second)]),
@@ -210,7 +210,7 @@ auth = "api"
 
     #[test]
     fn rejects_existing_profile_name() -> anyhow::Result<()> {
-        let profile = Profile::new(Agent::Codex, AuthMode::Subscription);
+        let profile = Profile::new(Agent::Codex, AuthMode::Native);
         let config = Config {
             profiles: BTreeMap::from([("work".into(), profile)]),
         };

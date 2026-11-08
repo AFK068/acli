@@ -21,7 +21,7 @@ pub(super) fn command(auth: &AuthMode, directory: &Path, key: Option<&str>) -> C
     }
 
     match auth {
-        AuthMode::Subscription => {
+        AuthMode::Native => {
             command.args(["--settings", r#"{"forceLoginMethod":"claudeai"}"#]);
         }
         AuthMode::Api => {
@@ -41,9 +41,9 @@ mod tests {
     use std::ffi::OsStr;
 
     #[test]
-    fn subscription_uses_its_own_login_and_directory() {
+    fn native_uses_its_own_login_and_directory() {
         let directory = Path::new("profile-data");
-        let command = command(&AuthMode::Subscription, directory, None);
+        let command = command(&AuthMode::Native, directory, None);
         let environment: BTreeMap<_, _> = command.get_envs().collect();
         assert_eq!(
             environment[OsStr::new("CLAUDE_CONFIG_DIR")],

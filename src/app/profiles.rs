@@ -17,7 +17,7 @@ pub(crate) fn add(
     load(path)?.validate_new_profile(name, &profile)?;
     let key = match profile.auth {
         AuthMode::Api => Some(key.context("API key is required")?),
-        AuthMode::Subscription => None,
+        AuthMode::Native => None,
     };
     let id = profile.id;
     if let Some(key) = key {
@@ -175,10 +175,7 @@ mod tests {
     fn removes_profiles_without_saved_keys() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        for profile in [
-            Profile::new(Agent::Codex, AuthMode::Subscription),
-            api_profile(),
-        ] {
+        for profile in [Profile::new(Agent::Codex, AuthMode::Native), api_profile()] {
             storage::add_profile(&path, "work", profile)?;
             remove(&path, "work")?;
             assert!(load(&path)?.profiles.is_empty());

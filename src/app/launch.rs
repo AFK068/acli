@@ -10,7 +10,7 @@ pub(crate) fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {
     let profile = config.profile(name)?;
 
     let key = match profile.auth {
-        AuthMode::Subscription => None,
+        AuthMode::Native => None,
         AuthMode::Api => {
             let key = crate::credentials::load(profile.id)
                 .with_context(|| format!("Could not load API key for profile '{name}'"))?;
@@ -59,7 +59,7 @@ mod tests {
     fn prepares_profile_directory_without_changing_working_directory() -> anyhow::Result<()> {
         let directory = tempfile::tempdir()?;
         let path = directory.path().join("config.toml");
-        let profile = Profile::new(Agent::Codex, AuthMode::Subscription);
+        let profile = Profile::new(Agent::Codex, AuthMode::Native);
         let expected = paths::profile_dir(&path, &profile);
         storage::add_profile(&path, "personal", profile)?;
         std::fs::remove_dir(&expected)?;
