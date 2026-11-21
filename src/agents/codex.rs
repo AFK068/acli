@@ -1,3 +1,4 @@
+use crate::config::McpServers;
 use std::path::Path;
 use std::process::Command;
 
@@ -8,7 +9,7 @@ const API_PROVIDER: &str = concat!(
     "requires_openai_auth=false}",
 );
 
-pub(super) fn command(directory: &Path, key: Option<&str>) -> Command {
+pub(super) fn command(directory: &Path, key: Option<&str>, servers: &McpServers) -> Command {
     let mut command = Command::new("codex");
     command
         .env("CODEX_HOME", directory)
@@ -42,6 +43,11 @@ pub(super) fn command(directory: &Path, key: Option<&str>) -> Command {
             r#"forced_login_method="chatgpt""#,
         ]);
     }
+    for (name, server) in servers {
+        command
+            .arg("-c")
+            .arg(format!("mcp_servers.acli-{name}={}", server.table()));
+    }
     command
 }
 
@@ -53,7 +59,7 @@ mod tests {
     #[test]
     fn native_uses_its_own_login_and_directory() {
         let directory = Path::new("profile-data");
-        let command = command(directory, None);
+        let command = command(directory, None, &McpServers::new());
         let vars = env(&command);
         assert_eq!(vars["CODEX_HOME"], Some(directory.as_os_str()));
         assert_eq!(vars["OPENAI_API_KEY"], None);
@@ -66,7 +72,11 @@ mod tests {
 
     #[test]
     fn api_key_is_passed_in_environment_only() {
-        let command = command(Path::new("profile-data"), Some("test-secret"));
+        let command = command(
+            Path::new("profile-data"),
+            Some("test-secret"),
+            &McpServers::new(),
+        );
         assert_eq!(env(&command)["ACLI_API_KEY"], Some("test-secret".as_ref()));
         assert!(
             command

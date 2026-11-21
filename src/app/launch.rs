@@ -31,7 +31,7 @@ pub(crate) fn prepare(
     paths::create_dir(&directory)?;
     crate::skills::refresh(shared, claude_home, path, &config)?;
     crate::skills::connect(profile.agent, &directory, shared)?;
-    Ok(crate::agents::command(profile, &directory, key.as_deref()))
+    crate::agents::command(profile, &directory, key.as_deref(), &config.mcp)
 }
 
 #[cfg(test)]

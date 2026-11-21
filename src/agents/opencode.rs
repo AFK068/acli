@@ -1,8 +1,13 @@
-use crate::config::Provider;
+use crate::config::{McpServers, Provider};
+use serde_json::json;
 use std::path::Path;
 use std::process::Command;
 
-pub(super) fn command(directory: &Path, credentials: Option<(Provider, &str)>) -> Command {
+pub(super) fn command(
+    directory: &Path,
+    credentials: Option<(Provider, &str)>,
+    servers: &McpServers,
+) -> Command {
     let mut command = Command::new("opencode");
     super::environment::clear_provider_credentials(&mut command);
     // OpenCode 2 uses a shared server unless standalone mode is explicit.
@@ -21,21 +26,27 @@ pub(super) fn command(directory: &Path, credentials: Option<(Provider, &str)>) -
     ] {
         command.env_remove(name);
     }
+    let mut config = json!({});
     if let Some((provider, key)) = credentials {
         let variable = match provider {
             Provider::OpenAi => "OPENAI_API_KEY",
             Provider::Anthropic => "ANTHROPIC_API_KEY",
             Provider::KimiCodePlanCn | Provider::KimiCodePlanGlobal => "KIMI_API_KEY",
         };
-        command.env(variable, key).env(
-            "OPENCODE_CONFIG_CONTENT",
-            format!(
-                r#"{{"policies":[
-                    {{"action":"provider.use","resource":"*","effect":"deny"}},
-                    {{"action":"provider.use","resource":"{provider}","effect":"allow"}}
-                ]}}"#,
-            ),
-        );
+        command.env(variable, key);
+        config["policies"] = json!([
+            {"action":"provider.use", "resource":"*", "effect":"deny"},
+            {"action":"provider.use", "resource":provider.to_string(), "effect":"allow"}
+        ]);
+    }
+    for (name, server) in servers {
+        let argv: Vec<_> = std::iter::once(&server.command)
+            .chain(&server.args)
+            .collect();
+        config["mcp"]["servers"][format!("acli-{name}")] = json!({"type":"local", "command":argv});
+    }
+    if config != json!({}) {
+        command.env("OPENCODE_CONFIG_CONTENT", config.to_string());
     }
     command
 }
@@ -56,7 +67,7 @@ mod tests {
     #[test]
     fn isolates_credentials_config_and_server() {
         let directory = Path::new("profile-data");
-        let command = command(directory, None);
+        let command = command(directory, None, &McpServers::new());
         let vars = env(&command);
         for (variable, child) in [
             ("XDG_DATA_HOME", "data"),
@@ -82,7 +93,11 @@ mod tests {
     #[test]
     fn passes_only_the_selected_providers_key() {
         for (provider, _, variable) in PROVIDERS {
-            let command = command(Path::new("profile"), Some((provider, "secret")));
+            let command = command(
+                Path::new("profile"),
+                Some((provider, "secret")),
+                &McpServers::new(),
+            );
             let vars = env(&command);
             for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "KIMI_API_KEY"] {
                 assert_eq!(vars[key], (key == variable).then_some("secret".as_ref()));
@@ -92,9 +107,16 @@ mod tests {
     }
 
     #[test]
-    fn policy_allows_only_the_selected_provider() -> anyhow::Result<()> {
+    fn shared_server_keeps_the_provider_policy() -> anyhow::Result<()> {
+        let servers = McpServers::from([(
+            "docs".into(),
+            crate::config::McpServer {
+                command: "fixture".into(),
+                args: vec!["two words".into()],
+            },
+        )]);
         for (provider, name, _) in PROVIDERS {
-            let command = command(Path::new("profile"), Some((provider, "secret")));
+            let command = command(Path::new("profile"), Some((provider, "secret")), &servers);
             let json = env(&command)["OPENCODE_CONFIG_CONTENT"]
                 .unwrap()
                 .to_str()
@@ -102,7 +124,7 @@ mod tests {
             let policy: serde_json::Value = serde_json::from_str(json)?;
             assert_eq!(
                 policy,
-                serde_json::json!({"policies": [
+                serde_json::json!({"mcp":{"servers":{"acli-docs":{"type":"local","command":["fixture","two words"]}}},"policies": [
                     {"action":"provider.use", "resource":"*", "effect":"deny"},
                     {"action":"provider.use", "resource":name, "effect":"allow"}
                 ]})

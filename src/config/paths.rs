@@ -15,7 +15,7 @@ pub(crate) fn profile_dir(path: &std::path::Path, profile: &Profile) -> std::pat
         .join(profile.agent.to_string())
 }
 
-pub(super) fn parent_dir(path: &std::path::Path) -> &std::path::Path {
+pub(crate) fn parent_dir(path: &std::path::Path) -> &std::path::Path {
     path.parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| std::path::Path::new("."))
