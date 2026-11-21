@@ -81,6 +81,10 @@ impl Profile {
         }
     }
 
+    pub(crate) fn requires_provider(&self) -> bool {
+        matches!(self.agent, Agent::OpenCode) && self.auth == AuthMode::Api
+    }
+
     pub(crate) fn validate(&self, name: &str) -> anyhow::Result<()> {
         anyhow::ensure!(!self.id.is_nil(), "Profile '{name}' has an empty ID");
         anyhow::ensure!(
@@ -88,7 +92,7 @@ impl Profile {
             "Profile '{name}': API key authentication for {} is not supported yet; sign in inside the agent instead",
             self.agent
         );
-        if matches!(self.agent, Agent::OpenCode) && self.auth == AuthMode::Api {
+        if self.requires_provider() {
             anyhow::ensure!(
                 self.provider.is_some(),
                 "Profile '{name}': select an OpenCode provider"

@@ -26,7 +26,7 @@ impl Command {
         let root = skills::directory()?;
         match self {
             Self::List => {
-                let config = crate::app::profiles::load(config_path)?;
+                let config = crate::config::storage::load(config_path)?;
                 skills::refresh(&root, &skills::claude::directory()?, config_path, &config)?;
                 let names = skills::list(&root)?;
                 if names.is_empty() {

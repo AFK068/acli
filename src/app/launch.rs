@@ -3,8 +3,7 @@ use anyhow::Context;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::profiles;
-use crate::config::{Agent, AuthMode, paths};
+use crate::config::{Agent, AuthMode, paths, storage};
 
 pub(crate) fn prepare(
     path: &Path,
@@ -13,7 +12,7 @@ pub(crate) fn prepare(
     claude_home: &Path,
     mcp_dirs: &[(Agent, PathBuf)],
 ) -> anyhow::Result<Command> {
-    let config = profiles::load(path)?;
+    let config = storage::load(path)?;
     let profile = config.profile(name)?;
 
     let key = match profile.auth {
@@ -40,7 +39,7 @@ pub(crate) fn prepare(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Profile, storage};
+    use crate::config::Profile;
 
     use crate::test_support::{TestApp, env, write_skill};
     use std::fs;

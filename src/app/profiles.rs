@@ -1,12 +1,8 @@
 use anyhow::Context;
 use std::path::Path;
 
-use crate::config::{AuthMode, Config, Profile, storage};
+use crate::config::{AuthMode, Profile, storage};
 use crate::credentials;
-
-pub(crate) fn load(path: &Path) -> anyhow::Result<Config> {
-    storage::load(path)
-}
 
 pub(crate) fn add(
     path: &Path,
@@ -14,7 +10,7 @@ pub(crate) fn add(
     profile: Profile,
     key: Option<&str>,
 ) -> anyhow::Result<()> {
-    load(path)?.validate_new_profile(name, &profile)?;
+    storage::load(path)?.validate_new_profile(name, &profile)?;
     let key = match profile.auth {
         AuthMode::Api => Some(key.context("API key is required")?),
         AuthMode::Native => None,
@@ -42,10 +38,6 @@ pub(crate) fn remove(path: &Path, name: &str) -> anyhow::Result<()> {
         })?;
     }
     Ok(())
-}
-
-pub(crate) fn rename(path: &Path, name: &str, new_name: &str) -> anyhow::Result<()> {
-    storage::rename_profile(path, name, new_name)
 }
 
 #[cfg(test)]
@@ -97,7 +89,7 @@ mod tests {
     fn renaming_profile_keeps_its_key() -> anyhow::Result<()> {
         let app = TestApp::new()?;
         add(&app.config, "work", api_profile(), Some("test-secret"))?;
-        rename(&app.config, "work", "renamed")?;
+        storage::rename_profile(&app.config, "work", "renamed")?;
         assert_eq!(
             env(&app.prepare("renamed")?)["ACLI_API_KEY"],
             Some("test-secret".as_ref())
@@ -112,7 +104,7 @@ mod tests {
         profile.provider = Some(Provider::Anthropic);
         add(&app.config, "work", profile, Some("test-secret"))?;
         assert_eq!(
-            load(&app.config)?.profile("work")?.provider,
+            storage::load(&app.config)?.profile("work")?.provider,
             Some(Provider::Anthropic)
         );
         assert_eq!(
@@ -195,7 +187,7 @@ mod tests {
 
         remove(path, "work")?;
 
-        assert!(load(path)?.profiles.is_empty());
+        assert!(storage::load(path)?.profiles.is_empty());
         assert_key_missing(id);
         Ok(())
     }
@@ -207,7 +199,7 @@ mod tests {
         for profile in [Profile::new(Agent::Codex, AuthMode::Native), api_profile()] {
             storage::add_profile(path, "work", profile)?;
             remove(path, "work")?;
-            assert!(load(path)?.profiles.is_empty());
+            assert!(storage::load(path)?.profiles.is_empty());
         }
         Ok(())
     }
@@ -225,7 +217,7 @@ mod tests {
 
         assert!(error.to_string().contains("was removed, but"));
         assert!(!format!("{error:?}").contains("test-secret"));
-        assert!(load(path)?.profiles.is_empty());
+        assert!(storage::load(path)?.profiles.is_empty());
         assert_eq!(credentials::load(id)?, "test-secret");
         credentials::delete(id)?;
         Ok(())

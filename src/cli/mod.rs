@@ -26,7 +26,7 @@ impl Cli {
                 Ok(())
             }
             Command::Profile(ProfileCommand::Rename { name, new_name }) => {
-                crate::app::profiles::rename(path, name, new_name)?;
+                crate::config::storage::rename_profile(path, name, new_name)?;
                 println!("Profile '{name}' renamed to '{new_name}'");
                 Ok(())
             }
