@@ -3,7 +3,12 @@ use std::path::Path;
 use std::process::Command;
 
 pub(super) fn run(path: &Path, name: &str) -> anyhow::Result<()> {
-    let mut command = crate::app::launch::prepare(path, name)?;
+    let mut command = crate::app::launch::prepare(
+        path,
+        name,
+        &crate::skills::directory()?,
+        &crate::skills::claude::directory()?,
+    )?;
     execute(&mut command)
 }
 

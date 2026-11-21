@@ -3,6 +3,7 @@ mod app;
 mod cli;
 mod config;
 mod credentials;
+mod skills;
 
 use clap::Parser;
 

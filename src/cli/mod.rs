@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 mod add_profile;
 mod list_profiles;
 mod run_agent;
+mod skills;
 
 #[derive(Parser)]
 #[command(version, about = "A hub for terminal coding agents")]
@@ -14,6 +15,7 @@ pub(crate) struct Cli {
 impl Cli {
     pub(crate) fn execute(&self, path: &std::path::Path) -> anyhow::Result<()> {
         match &self.command {
+            Command::Skills(cmd) => cmd.execute(path),
             Command::List => list_profiles::run(path),
             Command::Profile(ProfileCommand::Add) => add_profile::run(path),
             Command::Profile(ProfileCommand::Remove { name }) => {
@@ -37,6 +39,9 @@ enum Command {
     List,
     /// Run an agent using a saved profile.
     Run { name: String },
+    /// Manage shared agent skills.
+    #[command(subcommand)]
+    Skills(skills::Command),
     /// Manage agent profiles.
     #[command(subcommand)]
     Profile(ProfileCommand),

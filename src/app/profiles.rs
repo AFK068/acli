@@ -74,7 +74,12 @@ mod tests {
             assert!(!saved.contains("test-secret"));
             assert_eq!(credentials::load(id)?, "test-secret");
 
-            let command = crate::app::launch::prepare(&path, &name)?;
+            let command = crate::app::launch::prepare(
+                &path,
+                &name,
+                &directory.path().join("shared"),
+                &directory.path().join("claude"),
+            )?;
             assert!(command.get_envs().any(|(name, value)| {
                 name == variable && value == Some(std::ffi::OsStr::new("test-secret"))
             }));
@@ -88,7 +93,12 @@ mod tests {
         let path = directory.path().join("config.toml");
         add(&path, "work", api_profile(), Some("test-secret"))?;
         rename(&path, "work", "renamed")?;
-        let command = crate::app::launch::prepare(&path, "renamed")?;
+        let command = crate::app::launch::prepare(
+            &path,
+            "renamed",
+            &directory.path().join("shared"),
+            &directory.path().join("claude"),
+        )?;
         assert!(command.get_envs().any(|(name, value)| {
             name == "ACLI_API_KEY" && value == Some(std::ffi::OsStr::new("test-secret"))
         }));
@@ -127,7 +137,12 @@ mod tests {
             assert_eq!(load(&path)?.profile(name)?.provider, Some(provider));
 
             rename(&path, name, "renamed")?;
-            let command = crate::app::launch::prepare(&path, "renamed")?;
+            let command = crate::app::launch::prepare(
+                &path,
+                "renamed",
+                &directory.path().join("shared"),
+                &directory.path().join("claude"),
+            )?;
             let env: BTreeMap<_, _> = command.get_envs().collect();
             assert_eq!(
                 env[OsStr::new(variable)],
