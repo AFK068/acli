@@ -10,6 +10,7 @@ dependencies = [
  "clap",
  "dialoguer",
  "directories",
+ "jsonc-parser",
  "junction",
  "keyring",
  "keyring-core",
@@ -944,6 +945,15 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "jsonc-parser"
+version = "0.32.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "840785e1a8b4fdb27be18440a35a81af64820dc185c3973ff8b012d4c6282512"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

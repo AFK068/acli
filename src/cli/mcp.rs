@@ -1,3 +1,4 @@
+use crate::agents::mcp;
 use crate::config::{McpServer, storage};
 use clap::Subcommand;
 use dialoguer::Input;
@@ -14,7 +15,7 @@ pub(super) enum Command {
     },
     /// List shared servers.
     List,
-    /// Remove a server added with acli.
+    /// Remove a server added with acli. Remove native servers in their original agent.
     Remove { name: String },
 }
 
@@ -30,7 +31,7 @@ impl Command {
                 println!("Added MCP server '{name}'");
             }
             Self::List => {
-                let servers = storage::load(path)?.mcp;
+                let servers = mcp::shared(path, &storage::load(path)?, None, &mcp::user_dirs()?)?;
                 if servers.is_empty() {
                     println!("No shared MCP servers.");
                 }

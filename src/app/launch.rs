@@ -1,15 +1,16 @@
 use anyhow::Context;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::profiles;
-use crate::config::{AuthMode, paths};
+use crate::config::{Agent, AuthMode, paths};
 
 pub(crate) fn prepare(
     path: &Path,
     name: &str,
     shared: &Path,
     claude_home: &Path,
+    mcp_dirs: &[(Agent, PathBuf)],
 ) -> anyhow::Result<Command> {
     let config = profiles::load(path)?;
     let profile = config.profile(name)?;
@@ -31,13 +32,14 @@ pub(crate) fn prepare(
     paths::create_dir(&directory)?;
     crate::skills::refresh(shared, claude_home, path, &config)?;
     crate::skills::connect(profile.agent, &directory, shared)?;
-    crate::agents::command(profile, &directory, key.as_deref(), &config.mcp)
+    let servers = crate::agents::mcp::shared(path, &config, Some(name), mcp_dirs)?;
+    crate::agents::command(profile, &directory, key.as_deref(), &servers)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Agent, Profile, storage};
+    use crate::config::{Profile, storage};
 
     use crate::test_support::{TestApp, env, write_skill};
     use std::fs;

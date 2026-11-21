@@ -1,3 +1,6 @@
+mod discover;
+pub(crate) use discover::{shared, user_dirs};
+
 use crate::config::{Agent, McpServers, paths, storage};
 use anyhow::{Context, ensure};
 use serde_json::{Map, Value, json};

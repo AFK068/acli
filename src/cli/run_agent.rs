@@ -8,6 +8,7 @@ pub(super) fn run(path: &Path, name: &str) -> anyhow::Result<()> {
         name,
         &crate::skills::directory()?,
         &crate::skills::claude::directory()?,
+        &crate::agents::mcp::user_dirs()?,
     )?;
     execute(&mut command)
 }
