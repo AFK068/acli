@@ -125,9 +125,7 @@ mod tests {
 
     #[test]
     fn keeps_long_lists_in_terminal_scrollback() -> anyhow::Result<()> {
-        let mut config = Config {
-            profiles: Default::default(),
-        };
+        let mut config = Config::default();
         for index in 0..160 {
             config.profiles.insert(
                 format!("profile-{index:03}"),
@@ -146,9 +144,7 @@ mod tests {
 
     #[test]
     fn renders_empty_profile_list() -> anyhow::Result<()> {
-        let config = Config {
-            profiles: Default::default(),
-        };
+        let config = Config::default();
         assert!(render_profiles(&config)?.contains("No profiles configured."));
         Ok(())
     }

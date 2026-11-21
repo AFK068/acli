@@ -3,17 +3,23 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
+mod mcp;
+pub(crate) use mcp::{McpServer, McpServers};
 pub(crate) mod paths;
 pub(crate) mod storage;
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
+#[serde(default)]
 pub(crate) struct Config {
-    #[serde(default)]
     pub(crate) profiles: BTreeMap<String, Profile>,
+    pub(crate) mcp: McpServers,
 }
 
 impl Config {
     fn validate(&self) -> anyhow::Result<()> {
+        for (name, server) in &self.mcp {
+            server.validate(name)?;
+        }
         let mut ids = HashSet::new();
         for (name, profile) in &self.profiles {
             profile.validate(name)?;
@@ -243,6 +249,7 @@ mod tests {
         second.id = first.id;
         let config = Config {
             profiles: BTreeMap::from([("first".into(), first), ("second".into(), second)]),
+            ..Config::default()
         };
         let error = config.validate().unwrap_err();
         assert!(error.to_string().contains("duplicate ID"));
@@ -250,9 +257,7 @@ mod tests {
 
     #[test]
     fn rejects_blank_profile_names() {
-        let config = Config {
-            profiles: BTreeMap::new(),
-        };
+        let config = Config::default();
         for name in ["", "   ", "\t\n"] {
             let error = config.validate_profile_name(name).unwrap_err();
             assert!(error.to_string().contains("must not be empty"));
@@ -264,6 +269,7 @@ mod tests {
         let profile = Profile::new(Agent::Codex, AuthMode::Native);
         let config = Config {
             profiles: BTreeMap::from([("work".into(), profile)]),
+            ..Config::default()
         };
         let error = config.validate_profile_name("work").unwrap_err();
         assert!(error.to_string().contains("already exists"));

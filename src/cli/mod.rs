@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 
 mod add_profile;
 mod list_profiles;
+mod mcp;
 mod run_agent;
 mod skills;
 
@@ -15,6 +16,7 @@ pub(crate) struct Cli {
 impl Cli {
     pub(crate) fn execute(&self, path: &std::path::Path) -> anyhow::Result<()> {
         match &self.command {
+            Command::Mcp(cmd) => cmd.execute(path),
             Command::Skills(cmd) => cmd.execute(path),
             Command::List => list_profiles::run(path),
             Command::Profile(ProfileCommand::Add) => add_profile::run(path),
@@ -39,6 +41,9 @@ enum Command {
     List,
     /// Run an agent using a saved profile.
     Run { name: String },
+    /// Manage local MCP servers shared by all agent profiles.
+    #[command(subcommand)]
+    Mcp(mcp::Command),
     /// Manage shared agent skills.
     #[command(subcommand)]
     Skills(skills::Command),

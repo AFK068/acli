@@ -118,9 +118,7 @@ mod tests {
             app.claude.join("settings.json"),
             r#"{"enabledPlugins":{"example@local":true}}"#,
         )?;
-        let config = Config {
-            profiles: BTreeMap::new(),
-        };
+        let config = Config::default();
         refresh(&app.shared, &app.claude, &app.config, &config)
     }
 

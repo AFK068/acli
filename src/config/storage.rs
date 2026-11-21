@@ -2,7 +2,7 @@ use anyhow::Context;
 use std::io::Write;
 use std::path::Path;
 
-use super::{Config, Profile, paths};
+use super::{Config, McpServer, Profile, paths};
 
 pub(crate) fn load(path: &Path) -> anyhow::Result<Config> {
     parse(&read(path)?).with_context(|| format!("Invalid configuration '{}'", path.display()))
@@ -12,7 +12,7 @@ pub(crate) fn add_profile(path: &Path, name: &str, profile: Profile) -> anyhow::
     let _lock = lock(path)?;
     let (config, mut document) = read_config(path)?;
     config.validate_new_profile(name, &profile)?;
-    profiles_table(&mut document)?.insert(name, toml_edit::Item::Table(profile_table(&profile)));
+    table(&mut document, "profiles")?.insert(name, toml_edit::Item::Table(profile_table(&profile)));
     paths::create_dir(&paths::profile_dir(path, &profile))?;
     write(path, &document.to_string())
 }
@@ -24,7 +24,7 @@ pub(crate) fn remove_profile(path: &Path, name: &str) -> anyhow::Result<Profile>
         .profiles
         .remove(name)
         .with_context(|| format!("Profile '{name}' not found"))?;
-    profiles_table(&mut document)?.remove(name);
+    table(&mut document, "profiles")?.remove(name);
     write(path, &document.to_string())?;
     Ok(profile)
 }
@@ -35,11 +35,34 @@ pub(crate) fn rename_profile(path: &Path, name: &str, new_name: &str) -> anyhow:
     config.profile(name)?;
     config.validate_profile_name(new_name)?;
 
-    let profiles = profiles_table(&mut document)?;
+    let profiles = table(&mut document, "profiles")?;
     let profile = profiles
         .remove(name)
         .with_context(|| format!("Profile '{name}' not found"))?;
     profiles.insert(new_name, profile);
+    write(path, &document.to_string())
+}
+
+pub(crate) fn update_mcp(
+    path: &Path,
+    name: &str,
+    server: Option<&McpServer>,
+) -> anyhow::Result<()> {
+    let _lock = lock(path)?;
+    let (_, mut document) = read_config(path)?;
+    let servers = table(&mut document, "mcp")?;
+    if let Some(server) = server {
+        server.validate(name)?;
+        anyhow::ensure!(
+            !servers.contains_key(name),
+            "MCP server '{name}' already exists"
+        );
+        servers.insert(name, toml_edit::value(server.table()));
+    } else {
+        servers
+            .remove(name)
+            .with_context(|| format!("No MCP server '{name}' in the acli configuration"))?;
+    }
     write(path, &document.to_string())
 }
 
@@ -56,14 +79,15 @@ fn parse(input: &str) -> anyhow::Result<Config> {
     Ok(config)
 }
 
-fn profiles_table(
-    document: &mut toml_edit::DocumentMut,
-) -> anyhow::Result<&mut dyn toml_edit::TableLike> {
+fn table<'a>(
+    document: &'a mut toml_edit::DocumentMut,
+    key: &str,
+) -> anyhow::Result<&'a mut dyn toml_edit::TableLike> {
     document
-        .entry("profiles")
+        .entry(key)
         .or_insert(toml_edit::table())
         .as_table_like_mut()
-        .context("Expected profiles to be a TOML table")
+        .with_context(|| format!("Expected {key} to be a TOML table"))
 }
 
 fn profile_table(profile: &Profile) -> toml_edit::Table {
@@ -87,7 +111,7 @@ fn read(path: &Path) -> anyhow::Result<String> {
     }
 }
 
-fn write(path: &Path, contents: &str) -> anyhow::Result<()> {
+pub(crate) fn write(path: &Path, contents: &str) -> anyhow::Result<()> {
     // Replace the original only after the entire new file has been written.
     let mut file = tempfile::NamedTempFile::new_in(paths::parent_dir(path))?;
     file.write_all(contents.as_bytes())?;
@@ -97,7 +121,7 @@ fn write(path: &Path, contents: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn lock(path: &Path) -> anyhow::Result<std::fs::File> {
+pub(crate) fn lock(path: &Path) -> anyhow::Result<std::fs::File> {
     // Lock a separate file: replacing config.toml must not release the lock.
     paths::create_dir(paths::parent_dir(path))?;
     let lock_path = path.with_extension("lock");
@@ -123,6 +147,23 @@ mod tests {
 
     use crate::test_support::TestApp;
     use std::fs;
+
+    #[test]
+    fn shared_mcp_round_trips_without_overwriting_existing_settings() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        fs::write(&app.config, "# keep\ncustom = true\n")?;
+        let server = McpServer {
+            command: "test-server".into(),
+            args: vec!["--path".into(), "two words".into()],
+        };
+        update_mcp(&app.config, "docs", Some(&server))?;
+        assert_eq!(load(&app.config)?.mcp["docs"].args, server.args);
+        assert!(update_mcp(&app.config, "docs", Some(&server)).is_err());
+        update_mcp(&app.config, "docs", None)?;
+        assert!(load(&app.config)?.mcp.is_empty());
+        assert!(fs::read_to_string(&app.config)?.contains("# keep\ncustom = true"));
+        Ok(())
+    }
 
     #[test]
     fn saving_a_profile_creates_its_directory_and_persists_its_id() -> anyhow::Result<()> {
