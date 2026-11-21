@@ -44,9 +44,11 @@ pub(super) fn command(directory: &Path, key: Option<&str>, servers: &McpServers)
         ]);
     }
     for (name, server) in servers {
-        command
-            .arg("-c")
-            .arg(format!("mcp_servers.acli-{name}={}", server.table()));
+        command.arg("-c").arg(format!(
+            "mcp_servers.{}={}",
+            super::mcp::shared_name(name),
+            server.table()
+        ));
     }
     command
 }

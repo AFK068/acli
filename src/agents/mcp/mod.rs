@@ -7,20 +7,25 @@ use anyhow::{Context, ensure};
 use serde_json::{Map, Value, json};
 use std::{fs, path::Path};
 
+const PREFIX: &str = "acli-";
 const ZCODE_NATIVE: &str = ".zcode/cli/config.json";
 const ZCODE_COMPAT: &str = ".agents/mcp.json";
+
+pub(super) fn shared_name(name: &str) -> String {
+    format!("{PREFIX}{name}")
+}
 
 pub(super) fn named(servers: &McpServers) -> Map<String, Value> {
     servers
         .iter()
-        .map(|(name, server)| (format!("acli-{name}"), json!(server)))
+        .map(|(name, server)| (shared_name(name), json!(server)))
         .collect()
 }
 
 // The marker travels with the entry, so cleanup never claims a user's server by name.
 const OWNER: &str = "ACLI_MANAGED_MCP";
 fn managed(name: &str, server: &Value) -> bool {
-    name.starts_with("acli-") && server["env"][OWNER].as_str() == Some(name)
+    name.starts_with(PREFIX) && server["env"][OWNER].as_str() == Some(name)
 }
 
 pub(super) fn sync(agent: Agent, profile: &Path, servers: &McpServers) -> anyhow::Result<()> {

@@ -43,7 +43,8 @@ pub(super) fn command(
         let argv: Vec<_> = std::iter::once(&server.command)
             .chain(&server.args)
             .collect();
-        config["mcp"]["servers"][format!("acli-{name}")] = json!({"type":"local", "command":argv});
+        config["mcp"]["servers"][super::mcp::shared_name(name)] =
+            json!({"type":"local", "command":argv});
     }
     if config != json!({}) {
         command.env("OPENCODE_CONFIG_CONTENT", config.to_string());

@@ -1,4 +1,4 @@
-use super::{ZCODE_COMPAT, ZCODE_NATIVE, managed, zcode_uses_compat};
+use super::{ZCODE_COMPAT, ZCODE_NATIVE, managed, shared_name, zcode_uses_compat};
 use crate::config::{Agent, Config, McpServer, McpServers, paths};
 use anyhow::Context;
 use serde_json::{Map, Value};
@@ -53,7 +53,8 @@ pub(crate) fn shared(
                 continue;
             }
             if is_target {
-                local.insert(name.clone());
+                local.insert(name);
+                continue;
             }
             if let Some(server) = portable(agent, entry)
                 && server.validate(&name).is_ok()
@@ -62,7 +63,7 @@ pub(crate) fn shared(
             }
         }
     }
-    servers.retain(|name, _| !local.contains(name) && !local.contains(&format!("acli-{name}")));
+    servers.retain(|name, _| !local.contains(name) && !local.contains(&shared_name(name)));
     Ok(servers)
 }
 
@@ -85,11 +86,13 @@ fn entries(agent: Agent, dir: &Path) -> anyhow::Result<Map<String, Value>> {
 }
 
 fn section_in(path: &Path, section: &str) -> anyhow::Result<Map<String, Value>> {
-    if !path.try_exists()? {
-        return Ok(Map::new());
-    }
-    let text =
-        fs::read_to_string(path).with_context(|| format!("Could not read '{}'", path.display()))?;
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Map::new()),
+        Err(error) => {
+            return Err(error).with_context(|| format!("Could not read '{}'", path.display()));
+        }
+    };
     let mut config: Value = if path.extension().is_some_and(|ext| ext == "toml") {
         toml_edit::de::from_str(&text)
             .with_context(|| format!("Invalid TOML in '{}'", path.display()))?
