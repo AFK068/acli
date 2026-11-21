@@ -70,9 +70,7 @@ fn publish(shared: &Path, mut wanted: Links) -> anyhow::Result<()> {
         }
     }
     if wanted != previous {
-        let file = tempfile::NamedTempFile::new_in(shared)?;
-        serde_json::to_writer(file.as_file(), &wanted)?;
-        file.persist(shared.join(STATE))?;
+        crate::files::write(&shared.join(STATE), &serde_json::to_string(&wanted)?)?;
     }
     for (name, source) in wanted {
         let dest = shared.join(&name);

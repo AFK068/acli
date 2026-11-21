@@ -115,12 +115,5 @@ pub(crate) fn remove(root: &Path, name: &str) -> anyhow::Result<()> {
 }
 
 fn lock(root: &Path) -> anyhow::Result<fs::File> {
-    let file = fs::File::options()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(root.join(".acli.lock"))?;
-    file.lock()?;
-    Ok(file)
+    crate::files::lock(&root.join(".acli.lock"))
 }

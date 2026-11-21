@@ -1,6 +1,7 @@
+use crate::files;
 use anyhow::Context;
-use std::io::Write;
 use std::path::Path;
+use toml_edit::DocumentMut;
 
 use super::{Config, McpServer, Profile, paths};
 
@@ -9,38 +10,35 @@ pub(crate) fn load(path: &Path) -> anyhow::Result<Config> {
 }
 
 pub(crate) fn add_profile(path: &Path, name: &str, profile: Profile) -> anyhow::Result<()> {
-    let _lock = lock(path)?;
-    let (config, mut document) = read_config(path)?;
-    config.validate_new_profile(name, &profile)?;
-    table(&mut document, "profiles")?.insert(name, toml_edit::Item::Table(profile_table(&profile)));
-    paths::create_dir(&paths::profile_dir(path, &profile))?;
-    write(path, &document.to_string())
+    edit(path, |config, document| {
+        config.validate_new_profile(name, &profile)?;
+        table(document, "profiles")?.insert(name, toml_edit::Item::Table(profile_table(&profile)));
+        files::create_dir(&paths::profile_dir(path, &profile))
+    })
 }
 
 pub(crate) fn remove_profile(path: &Path, name: &str) -> anyhow::Result<Profile> {
-    let _lock = lock(path)?;
-    let (mut config, mut document) = read_config(path)?;
-    let profile = config
-        .profiles
-        .remove(name)
-        .with_context(|| format!("Profile '{name}' not found"))?;
-    table(&mut document, "profiles")?.remove(name);
-    write(path, &document.to_string())?;
-    Ok(profile)
+    edit(path, |mut config, document| {
+        let profile = config
+            .profiles
+            .remove(name)
+            .with_context(|| format!("Profile '{name}' not found"))?;
+        table(document, "profiles")?.remove(name);
+        Ok(profile)
+    })
 }
 
 pub(crate) fn rename_profile(path: &Path, name: &str, new_name: &str) -> anyhow::Result<()> {
-    let _lock = lock(path)?;
-    let (config, mut document) = read_config(path)?;
-    config.profile(name)?;
-    config.validate_profile_name(new_name)?;
-
-    let profiles = table(&mut document, "profiles")?;
-    let profile = profiles
-        .remove(name)
-        .with_context(|| format!("Profile '{name}' not found"))?;
-    profiles.insert(new_name, profile);
-    write(path, &document.to_string())
+    edit(path, |config, document| {
+        config.profile(name)?;
+        config.validate_profile_name(new_name)?;
+        let profiles = table(document, "profiles")?;
+        let profile = profiles
+            .remove(name)
+            .with_context(|| format!("Profile '{name}' not found"))?;
+        profiles.insert(new_name, profile);
+        Ok(())
+    })
 }
 
 pub(crate) fn update_mcp(
@@ -48,29 +46,38 @@ pub(crate) fn update_mcp(
     name: &str,
     server: Option<&McpServer>,
 ) -> anyhow::Result<()> {
-    let _lock = lock(path)?;
-    let (_, mut document) = read_config(path)?;
-    let servers = table(&mut document, "mcp")?;
-    if let Some(server) = server {
-        server.validate(name)?;
-        anyhow::ensure!(
-            !servers.contains_key(name),
-            "MCP server '{name}' already exists"
-        );
-        servers.insert(name, toml_edit::value(server.table()));
-    } else {
-        servers
-            .remove(name)
-            .with_context(|| format!("No MCP server '{name}' in the acli configuration"))?;
-    }
-    write(path, &document.to_string())
+    edit(path, |_, document| {
+        let servers = table(document, "mcp")?;
+        if let Some(server) = server {
+            server.validate(name)?;
+            anyhow::ensure!(
+                !servers.contains_key(name),
+                "MCP server '{name}' already exists"
+            );
+            servers.insert(name, toml_edit::value(server.table()));
+        } else {
+            servers
+                .remove(name)
+                .with_context(|| format!("No MCP server '{name}' in the acli configuration"))?;
+        }
+        Ok(())
+    })
 }
 
-fn read_config(path: &Path) -> anyhow::Result<(Config, toml_edit::DocumentMut)> {
+fn edit<T>(
+    path: &Path,
+    update: impl FnOnce(Config, &mut DocumentMut) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    files::create_dir(files::parent_dir(path))?;
+    // Lock a separate file so replacing the configuration does not release the lock.
+    let _lock = files::lock(&path.with_extension("lock"))?;
     let input = read(path)?;
     let config =
         parse(&input).with_context(|| format!("Invalid configuration '{}'", path.display()))?;
-    Ok((config, input.parse()?))
+    let mut document = input.parse()?;
+    let result = update(config, &mut document)?;
+    files::write(path, &document.to_string())?;
+    Ok(result)
 }
 
 fn parse(input: &str) -> anyhow::Result<Config> {
@@ -80,7 +87,7 @@ fn parse(input: &str) -> anyhow::Result<Config> {
 }
 
 fn table<'a>(
-    document: &'a mut toml_edit::DocumentMut,
+    document: &'a mut DocumentMut,
     key: &str,
 ) -> anyhow::Result<&'a mut dyn toml_edit::TableLike> {
     document
@@ -109,31 +116,6 @@ fn read(path: &Path) -> anyhow::Result<String> {
             Err(error).with_context(|| format!("Could not read configuration '{}'", path.display()))
         }
     }
-}
-
-pub(crate) fn write(path: &Path, contents: &str) -> anyhow::Result<()> {
-    // Replace the original only after the entire new file has been written.
-    let mut file = tempfile::NamedTempFile::new_in(paths::parent_dir(path))?;
-    file.write_all(contents.as_bytes())?;
-    file.as_file().sync_all()?;
-    file.persist(path)
-        .with_context(|| format!("Could not save configuration '{}'", path.display()))?;
-    Ok(())
-}
-
-pub(crate) fn lock(path: &Path) -> anyhow::Result<std::fs::File> {
-    // Lock a separate file: replacing config.toml must not release the lock.
-    paths::create_dir(paths::parent_dir(path))?;
-    let lock_path = path.with_extension("lock");
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&lock_path)
-        .with_context(|| format!("Could not open lock '{}'", lock_path.display()))?;
-    file.lock().context("Could not lock configuration")?;
-    Ok(file)
 }
 
 #[cfg(test)]

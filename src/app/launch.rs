@@ -1,3 +1,4 @@
+use crate::files;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -29,7 +30,7 @@ pub(crate) fn prepare(
     };
 
     let directory = paths::profile_dir(path, profile);
-    paths::create_dir(&directory)?;
+    files::create_dir(&directory)?;
     crate::skills::refresh(shared, claude_home, path, &config)?;
     crate::skills::connect(profile.agent, &directory, shared)?;
     let servers = crate::agents::mcp::shared(path, &config, Some(name), mcp_dirs)?;

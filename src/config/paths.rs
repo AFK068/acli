@@ -1,35 +1,18 @@
+use crate::files::parent_dir;
 use anyhow::Context;
+use std::path::{Path, PathBuf};
 
 use super::Profile;
 
-pub(crate) fn default_path() -> anyhow::Result<std::path::PathBuf> {
+pub(crate) fn default_path() -> anyhow::Result<PathBuf> {
     let directories = directories::ProjectDirs::from("", "", "acli")
         .context("Could not determine the configuration directory")?;
     Ok(directories.config_dir().join("config.toml"))
 }
 
-pub(crate) fn profile_dir(path: &std::path::Path, profile: &Profile) -> std::path::PathBuf {
+pub(crate) fn profile_dir(path: &Path, profile: &Profile) -> PathBuf {
     parent_dir(path)
         .join("profiles")
         .join(profile.id.to_string())
         .join(profile.agent.to_string())
-}
-
-pub(crate) fn parent_dir(path: &std::path::Path) -> &std::path::Path {
-    path.parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| std::path::Path::new("."))
-}
-
-pub(crate) fn create_dir(path: &std::path::Path) -> anyhow::Result<()> {
-    let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder
-        .create(path)
-        .with_context(|| format!("Could not create directory '{}'", path.display()))
 }

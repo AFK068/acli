@@ -1,7 +1,8 @@
 mod discover;
 pub(crate) use discover::{shared, user_dirs};
 
-use crate::config::{Agent, McpServers, paths, storage};
+use crate::config::{Agent, McpServers};
+use crate::files;
 use anyhow::{Context, ensure};
 use serde_json::{Map, Value, json};
 use std::{fs, path::Path};
@@ -26,7 +27,7 @@ pub(super) fn sync(agent: Agent, profile: &Path, servers: &McpServers) -> anyhow
     if !matches!(agent, Agent::Kimi | Agent::Pi | Agent::ZCode) {
         return Ok(());
     }
-    let _lock = storage::lock(&profile.join(".acli-mcp"))?;
+    let _lock = files::lock(&profile.join(".acli-mcp.lock"))?;
     let mut wanted = named(servers);
     for (name, server) in &mut wanted {
         server["env"] = json!({(OWNER): name});
@@ -107,8 +108,8 @@ fn update(path: &Path, keys: &[&str], wanted: &Map<String, Value>) -> anyhow::Re
         } else {
             path.to_owned()
         };
-        paths::create_dir(paths::parent_dir(&dest))?;
-        storage::write(&dest, &serde_json::to_string_pretty(&config)?)?;
+        files::create_dir(files::parent_dir(&dest))?;
+        files::write(&dest, &serde_json::to_string_pretty(&config)?)?;
     }
     Ok(())
 }
