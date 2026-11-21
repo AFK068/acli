@@ -12,7 +12,8 @@ pub(crate) fn load(path: &Path) -> anyhow::Result<Config> {
 pub(crate) fn add_profile(path: &Path, name: &str, profile: Profile) -> anyhow::Result<()> {
     edit(path, |config, document| {
         config.validate_new_profile(name, &profile)?;
-        table(document, "profiles")?.insert(name, toml_edit::Item::Table(profile_table(&profile)));
+        let profile_table = toml_edit::ser::to_document(&profile)?.into_table();
+        table(document, "profiles")?.insert(name, toml_edit::Item::Table(profile_table));
         files::create_dir(&paths::profile_dir(path, &profile))
     })
 }
@@ -81,7 +82,7 @@ fn edit<T>(
 }
 
 fn parse(input: &str) -> anyhow::Result<Config> {
-    let config: Config = toml::from_str(input)?;
+    let config: Config = toml_edit::de::from_str(input)?;
     config.validate()?;
     Ok(config)
 }
@@ -95,17 +96,6 @@ fn table<'a>(
         .or_insert(toml_edit::table())
         .as_table_like_mut()
         .with_context(|| format!("Expected {key} to be a TOML table"))
-}
-
-fn profile_table(profile: &Profile) -> toml_edit::Table {
-    let mut table = toml_edit::Table::new();
-    table["id"] = toml_edit::value(profile.id.to_string());
-    table["agent"] = toml_edit::value(profile.agent.to_string());
-    table["auth"] = toml_edit::value(profile.auth.to_string());
-    if let Some(provider) = profile.provider {
-        table["provider"] = toml_edit::value(provider.to_string());
-    }
-    table
 }
 
 fn read(path: &Path) -> anyhow::Result<String> {

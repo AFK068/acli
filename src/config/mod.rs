@@ -1,5 +1,5 @@
 use anyhow::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
@@ -61,12 +61,13 @@ impl Config {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Profile {
     pub(crate) id: uuid::Uuid,
     pub(crate) agent: Agent,
     pub(crate) auth: AuthMode,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) provider: Option<Provider>,
 }
 
@@ -102,7 +103,7 @@ impl Profile {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Agent {
     ClaudeCode,
@@ -137,7 +138,7 @@ impl fmt::Display for Agent {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum AuthMode {
     Native,
@@ -154,7 +155,7 @@ impl fmt::Display for AuthMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Provider {
     #[serde(rename = "openai")]
@@ -181,7 +182,7 @@ mod tests {
 
     #[test]
     fn example_config_contains_valid_named_profiles() -> anyhow::Result<()> {
-        let config: Config = toml::from_str(include_str!("../../config.example.toml"))?;
+        let config: Config = toml_edit::de::from_str(include_str!("../../config.example.toml"))?;
         config.validate()?;
         let personal = config.profile("personal")?;
         assert!(matches!(personal.agent, Agent::ClaudeCode));
@@ -196,7 +197,7 @@ mod tests {
     #[test]
     fn accepts_config_without_profiles() -> anyhow::Result<()> {
         for input in ["", " \n", "# No profiles yet\n", "[profiles]\n"] {
-            let config: Config = toml::from_str(input)?;
+            let config: Config = toml_edit::de::from_str(input)?;
             config.validate()?;
             assert!(config.profiles.is_empty());
         }
@@ -230,7 +231,7 @@ mod tests {
             "id = '{}'\nagent = 'codex'\nauth = 'api'\nunknown = 'value'",
             uuid::Uuid::new_v4()
         );
-        let error = toml::from_str::<Profile>(&input).unwrap_err();
+        let error = toml_edit::de::from_str::<Profile>(&input).unwrap_err();
         assert!(error.to_string().contains("unknown field"));
     }
 

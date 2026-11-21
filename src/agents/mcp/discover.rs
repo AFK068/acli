@@ -91,7 +91,8 @@ fn section_in(path: &Path, section: &str) -> anyhow::Result<Map<String, Value>> 
     let text =
         fs::read_to_string(path).with_context(|| format!("Could not read '{}'", path.display()))?;
     let mut config: Value = if path.extension().is_some_and(|ext| ext == "toml") {
-        toml::from_str(&text).with_context(|| format!("Invalid TOML in '{}'", path.display()))?
+        toml_edit::de::from_str(&text)
+            .with_context(|| format!("Invalid TOML in '{}'", path.display()))?
     } else {
         jsonc_parser::parse_to_serde_value(&text, &Default::default())
             .with_context(|| format!("Invalid JSON in '{}'", path.display()))?
