@@ -1,10 +1,17 @@
 use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
 pub(super) fn run(path: &Path, name: &str) -> anyhow::Result<()> {
     execute(&mut prepare(path, name)?)
+}
+
+pub(super) fn wait(path: &Path, name: &str) -> anyhow::Result<ExitStatus> {
+    let mut command = prepare(path, name)?;
+    command
+        .status()
+        .map_err(|error| start_error(command.get_program(), error))
 }
 
 fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {

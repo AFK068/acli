@@ -5,6 +5,7 @@ mod list_profiles;
 mod mcp;
 mod run_agent;
 mod skills;
+mod tui;
 
 #[derive(Parser)]
 #[command(version, about = "A hub for terminal coding agents")]
@@ -21,6 +22,7 @@ impl Cli {
             Command::List => list_profiles::run(path),
             Command::Profile(cmd) => cmd.execute(path),
             Command::Run { name } => run_agent::run(path, name),
+            Command::Tui => tui::run(path),
         }
     }
 }
@@ -31,6 +33,8 @@ enum Command {
     List,
     /// Run an agent using a saved profile.
     Run { name: String },
+    /// Browse profiles, skills and MCP servers in an interactive terminal.
+    Tui,
     /// Manage local MCP servers shared by all agent profiles.
     #[command(subcommand)]
     Mcp(mcp::Command),
