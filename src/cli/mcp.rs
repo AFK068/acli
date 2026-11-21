@@ -1,5 +1,5 @@
 use crate::agents::mcp;
-use crate::config::{McpServer, storage};
+use crate::config::{McpServer, McpServers, storage};
 use clap::Subcommand;
 use dialoguer::Input;
 use std::{io::IsTerminal, path::Path};
@@ -31,7 +31,7 @@ impl Command {
                 println!("Added MCP server '{name}'");
             }
             Self::List => {
-                let servers = mcp::shared(path, &storage::load(path)?, None, &mcp::user_dirs()?)?;
+                let servers = list(path)?;
                 if servers.is_empty() {
                     println!("No shared MCP servers.");
                 }
@@ -46,6 +46,10 @@ impl Command {
         }
         Ok(())
     }
+}
+
+pub(super) fn list(path: &Path) -> anyhow::Result<McpServers> {
+    mcp::shared(path, &storage::load(path)?, None, &mcp::user_dirs()?)
 }
 
 fn prompt() -> anyhow::Result<(String, McpServer)> {

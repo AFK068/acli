@@ -1,21 +1,24 @@
-use anyhow::Context;
+use std::ffi::OsStr;
+use std::io;
 use std::path::Path;
 use std::process::Command;
 
 pub(super) fn run(path: &Path, name: &str) -> anyhow::Result<()> {
-    let mut command = crate::app::launch::prepare(
+    execute(&mut prepare(path, name)?)
+}
+
+fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {
+    crate::app::launch::prepare(
         path,
         name,
         &crate::skills::directory()?,
         &crate::skills::claude::directory()?,
         &crate::agents::mcp::user_dirs()?,
-    )?;
-    execute(&mut command)
+    )
 }
 
 // Hand over the terminal and exit with the agent's status. This is CLI-specific.
 fn execute(command: &mut Command) -> anyhow::Result<()> {
-    let program = command.get_program().to_string_lossy().into_owned();
     #[cfg(unix)]
     let error = {
         use std::os::unix::process::CommandExt;
@@ -27,10 +30,15 @@ fn execute(command: &mut Command) -> anyhow::Result<()> {
         Err(error) => error,
     };
 
-    if error.kind() == std::io::ErrorKind::NotFound {
-        anyhow::bail!("Could not find '{program}'. Install it and add it to PATH");
+    Err(start_error(command.get_program(), error))
+}
+
+fn start_error(program: &OsStr, error: io::Error) -> anyhow::Error {
+    let program = program.to_string_lossy();
+    if error.kind() == io::ErrorKind::NotFound {
+        return anyhow::anyhow!("Could not find '{program}'. Install it and add it to PATH");
     }
-    Err(error).with_context(|| format!("Could not start '{program}'"))
+    anyhow::Error::new(error).context(format!("Could not start '{program}'"))
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@ use crate::skills::{self, source::Source};
 use anyhow::{Context, ensure};
 use clap::Subcommand;
 use std::{
+    ffi::OsString,
     io::IsTerminal,
     path::{Path, PathBuf},
 };
@@ -23,12 +24,9 @@ pub(super) enum Command {
 
 impl Command {
     pub(super) fn execute(&self, config_path: &Path) -> anyhow::Result<()> {
-        let root = skills::directory()?;
         match self {
             Self::List => {
-                let config = crate::config::storage::load(config_path)?;
-                skills::refresh(&root, &skills::claude::directory()?, config_path, &config)?;
-                let names = skills::list(&root)?;
+                let names = list(config_path)?;
                 if names.is_empty() {
                     println!("No shared skills installed.");
                 }
@@ -37,6 +35,7 @@ impl Command {
                 }
             }
             Self::Add { source, skill } => {
+                let root = skills::directory()?;
                 let source = Source::open(source)?;
                 let Some(path) = select_skill(&source, skill.as_deref())? else {
                     return Ok(());
@@ -45,12 +44,19 @@ impl Command {
                 println!("Installed {}", installed.display());
             }
             Self::Remove { name } => {
-                skills::remove(&root, name)?;
+                skills::remove(&skills::directory()?, name)?;
                 println!("Removed {name}");
             }
         }
         Ok(())
     }
+}
+
+pub(super) fn list(config_path: &Path) -> anyhow::Result<Vec<OsString>> {
+    let root = skills::directory()?;
+    let config = crate::config::storage::load(config_path)?;
+    skills::refresh(&root, &skills::claude::directory()?, config_path, &config)?;
+    skills::list(&root)
 }
 
 fn select_skill(source: &Source, name: Option<&str>) -> anyhow::Result<Option<PathBuf>> {

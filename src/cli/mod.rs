@@ -19,17 +19,7 @@ impl Cli {
             Command::Mcp(cmd) => cmd.execute(path),
             Command::Skills(cmd) => cmd.execute(path),
             Command::List => list_profiles::run(path),
-            Command::Profile(ProfileCommand::Add) => add_profile::run(path),
-            Command::Profile(ProfileCommand::Remove { name }) => {
-                crate::app::profiles::remove(path, name)?;
-                println!("Profile '{name}' removed");
-                Ok(())
-            }
-            Command::Profile(ProfileCommand::Rename { name, new_name }) => {
-                crate::config::storage::rename_profile(path, name, new_name)?;
-                println!("Profile '{name}' renamed to '{new_name}'");
-                Ok(())
-            }
+            Command::Profile(cmd) => cmd.execute(path),
             Command::Run { name } => run_agent::run(path, name),
         }
     }
@@ -60,4 +50,21 @@ enum ProfileCommand {
     Remove { name: String },
     /// Rename a profile, keeping its credentials and agent data.
     Rename { name: String, new_name: String },
+}
+
+impl ProfileCommand {
+    fn execute(&self, path: &std::path::Path) -> anyhow::Result<()> {
+        match self {
+            Self::Add => add_profile::run(path)?,
+            Self::Remove { name } => {
+                crate::app::profiles::remove(path, name)?;
+                println!("Profile '{name}' removed");
+            }
+            Self::Rename { name, new_name } => {
+                crate::config::storage::rename_profile(path, name, new_name)?;
+                println!("Profile '{name}' renamed to '{new_name}'");
+            }
+        }
+        Ok(())
+    }
 }
