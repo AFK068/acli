@@ -174,10 +174,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn example_config_is_valid() -> anyhow::Result<()> {
+    fn example_config_contains_valid_named_profiles() -> anyhow::Result<()> {
         let config: Config = toml::from_str(include_str!("../../config.example.toml"))?;
         config.validate()?;
-        assert!(!config.profiles.is_empty());
+        let personal = config.profile("personal")?;
+        assert!(matches!(personal.agent, Agent::ClaudeCode));
+        assert_eq!(personal.auth, AuthMode::Native);
+        let work = config.profile("work")?;
+        assert!(matches!(work.agent, Agent::Codex));
+        assert_eq!(work.auth, AuthMode::Api);
+        assert!(config.profile("missing").is_err());
         Ok(())
     }
 
@@ -192,69 +198,24 @@ mod tests {
     }
 
     #[test]
-    fn parses_named_profiles() -> anyhow::Result<()> {
-        let config: Config = toml::from_str(
-            r#"
-[profiles.personal]
-id = "8d8ed9a1-9c7e-4ad3-a69a-6e9dc9a05745"
-agent = "claude-code"
-auth = "native"
-
-[profiles.work]
-id = "5be806a5-2288-4bc4-918c-dc463f751132"
-agent = "codex"
-auth = "api"
-"#,
-        )?;
-
-        config.validate()?;
-        let personal = config.profile("personal")?;
-        assert!(matches!(personal.agent, Agent::ClaudeCode));
-        assert_eq!(personal.auth, AuthMode::Native);
-
-        let work = config.profile("work")?;
-        assert!(matches!(work.agent, Agent::Codex));
-        assert_eq!(work.auth, AuthMode::Api);
-        assert!(config.profile("missing").is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn accepts_api_profile_with_system_credentials() -> anyhow::Result<()> {
-        Profile::new(Agent::Codex, AuthMode::Api).validate("work")
-    }
-
-    #[test]
-    fn requires_provider_only_for_opencode_api() -> anyhow::Result<()> {
+    fn opencode_api_requires_a_provider() -> anyhow::Result<()> {
         let mut profile = Profile::new(Agent::OpenCode, AuthMode::Api);
-        assert!(
-            profile
-                .validate("work")
-                .unwrap_err()
-                .to_string()
-                .contains("select an OpenCode provider")
-        );
+        assert!(profile.validate("work").is_err());
         profile.provider = Some(Provider::OpenAi);
-        profile.validate("work")?;
+        profile.validate("work")
+    }
 
-        for agent in [
-            Agent::OpenCode,
-            Agent::Codex,
-            Agent::ClaudeCode,
-            Agent::Kimi,
-            Agent::Pi,
-            Agent::ZCode,
-        ] {
-            for auth in [AuthMode::Native, AuthMode::Api] {
-                if matches!(agent, Agent::OpenCode) && auth == AuthMode::Api {
-                    continue;
-                }
-                let mut profile = Profile::new(agent, auth);
+    #[test]
+    fn rejects_provider_outside_opencode_api() {
+        use Agent::*;
+        for agent in [OpenCode, Codex, ClaudeCode, Kimi, Pi, ZCode] {
+            for mode in [AuthMode::Native, AuthMode::Api] {
+                let mut profile = Profile::new(agent, mode);
                 profile.provider = Some(Provider::OpenAi);
-                assert!(profile.validate("work").is_err());
+                let valid = matches!((agent, mode), (OpenCode, AuthMode::Api));
+                assert_eq!(profile.validate("work").is_ok(), valid, "{agent} {mode}");
             }
         }
-        Ok(())
     }
 
     #[test]

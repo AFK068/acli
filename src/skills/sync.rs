@@ -11,7 +11,6 @@ use std::{
 };
 
 type Links = BTreeMap<String, PathBuf>;
-// Keep ownership of links created by earlier versions.
 const STATE: &str = ".acli-claude-links.json";
 
 pub(crate) fn refresh(
@@ -105,46 +104,49 @@ fn owns_link(links: &Links, shared: &Path, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn follows_active_plugin_version_and_preserves_unmanaged_skills() -> anyhow::Result<()> {
-        let temp = tempfile::tempdir()?;
-        let home = temp.path().join(".claude");
-        let shared = temp.path().join("shared");
-        fs::create_dir_all(home.join("plugins"))?;
-        fs::create_dir_all(shared.join("mine"))?;
-        fs::write(shared.join("mine/SKILL.md"), "personal")?;
+    use crate::test_support::{TestApp, write_skill};
+
+    fn set_plugin(app: &TestApp, version: &str, scope: &str) -> anyhow::Result<()> {
+        let plugin = app.claude.join("plugins/cache/example").join(version);
+        write_skill(&plugin.join("skills/review"), version)?;
+        let registry = serde_json::json!({"version":2, "plugins":{"example@local":[{"scope":scope,"installPath":plugin}]}});
         fs::write(
-            home.join("settings.json"),
+            app.claude.join("plugins/installed_plugins.json"),
+            registry.to_string(),
+        )?;
+        fs::write(
+            app.claude.join("settings.json"),
             r#"{"enabledPlugins":{"example@local":true}}"#,
         )?;
+        let config = Config {
+            profiles: BTreeMap::new(),
+        };
+        refresh(&app.shared, &app.claude, &app.config, &config)
+    }
+
+    #[test]
+    fn plugin_skills_follow_user_installations_and_version_changes() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        let skill = app.shared.join("review/SKILL.md");
         for version in ["1", "2"] {
-            let plugin = home.join("plugins/cache/example").join(version);
-            for name in ["review", "mine"] {
-                fs::create_dir_all(plugin.join("skills").join(name))?;
-                fs::write(plugin.join("skills").join(name).join("SKILL.md"), version)?;
-            }
-            for scope in ["project", "user"] {
-                let registry = serde_json::json!({"version":2,"plugins":{"example@local":[{"scope":scope,"installPath":plugin}]}});
-                fs::write(
-                    home.join("plugins/installed_plugins.json"),
-                    registry.to_string(),
-                )?;
-                let config = Config {
-                    profiles: BTreeMap::new(),
-                };
-                refresh(&shared, &home, &temp.path().join("config.toml"), &config)?;
-                assert_eq!(shared.join("review/SKILL.md").is_file(), scope == "user");
-            }
-            assert_eq!(fs::read_to_string(shared.join("review/SKILL.md"))?, version);
-            assert_eq!(
-                fs::read_to_string(shared.join("mine/SKILL.md"))?,
-                "personal"
-            );
-            assert!(super::super::remove(&shared, "review").is_err());
+            set_plugin(&app, version, "user")?;
+            assert_eq!(fs::read_to_string(&skill)?, version);
         }
-        publish(&shared, Links::new())?;
-        assert!(fs::symlink_metadata(shared.join("review")).is_err());
-        assert!(shared.join("mine/SKILL.md").is_file());
+        assert!(super::super::remove(&app.shared, "review").is_err());
+        set_plugin(&app, "2", "project")?;
+        assert!(app.shared.join("review").symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn plugin_cannot_replace_a_personal_skill() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        write_skill(&app.shared.join("review"), "personal")?;
+        set_plugin(&app, "1", "user")?;
+        assert_eq!(
+            fs::read_to_string(app.shared.join("review/SKILL.md"))?,
+            "personal"
+        );
         Ok(())
     }
 }

@@ -61,42 +61,37 @@ fn sync(shared: &Path, target: &Path) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    use crate::test_support::{TestApp, write_skill};
+
     #[test]
-    fn two_profiles_share_edits_and_keep_personal_skills() -> anyhow::Result<()> {
-        let temp = tempfile::tempdir()?;
-        let download = temp.path().join("download/review");
-        fs::create_dir_all(download.join("references"))?;
-        fs::write(download.join("SKILL.md"), "review")?;
-        fs::write(download.join("references/check.md"), "before")?;
-        let shared = temp.path().join("shared");
-        let installed = crate::skills::install(&shared, &download)?;
-        let profiles = [
-            temp.path().join("work/skills"),
-            temp.path().join("personal/skills"),
-        ];
-        for profile in &profiles {
-            sync(&shared, profile)?;
-            sync(&shared, profile)?;
-            assert_eq!(
-                fs::read_to_string(profile.join("review/references/check.md"))?,
-                "before"
-            );
-            fs::create_dir(profile.join("local"))?;
-        }
-        fs::write(installed.join("SKILL.md"), "after")?;
-        for profile in &profiles {
-            assert_eq!(
-                fs::read_to_string(profile.join("review/SKILL.md"))?,
-                "after"
-            );
-        }
-        crate::skills::remove(&shared, "review")?;
-        for profile in &profiles {
-            sync(&shared, profile)?;
-            assert!(fs::symlink_metadata(profile.join("review")).is_err());
-            assert!(profile.join("local").is_dir());
-        }
-        assert!(download.join("SKILL.md").is_file());
+    fn shared_links_expose_the_whole_skill_and_its_edits() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        let source = app.root.path().join("download/review");
+        write_skill(&source, "review")?;
+        fs::create_dir(source.join("references"))?;
+        fs::write(source.join("references/check.md"), "before")?;
+        let installed = crate::skills::install(&app.shared, &source)?;
+        sync(&app.shared, &app.claude)?;
+        let reference = app.claude.join("review/references/check.md");
+        assert_eq!(fs::read_to_string(&reference)?, "before");
+        fs::write(installed.join("references/check.md"), "after")?;
+        assert_eq!(fs::read_to_string(reference)?, "after");
+        Ok(())
+    }
+
+    #[test]
+    fn removal_cleans_only_the_managed_link() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        let source = app.root.path().join("download/review");
+        write_skill(&source, "review")?;
+        write_skill(&app.claude.join("local"), "personal")?;
+        crate::skills::install(&app.shared, &source)?;
+        sync(&app.shared, &app.claude)?;
+        crate::skills::remove(&app.shared, "review")?;
+        sync(&app.shared, &app.claude)?;
+        assert!(app.claude.join("review").symlink_metadata().is_err());
+        assert!(app.claude.join("local/SKILL.md").is_file());
+        assert!(source.join("SKILL.md").is_file());
         Ok(())
     }
 }

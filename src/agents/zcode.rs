@@ -27,19 +27,18 @@ pub(super) fn command(directory: &Path) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
-    use std::ffi::OsStr;
+    use crate::test_support::env;
 
     #[test]
     fn isolates_home_credentials_and_sessions_without_changing_working_directory() {
         let directory = Path::new("profile-data");
         let command = command(directory);
-        let env: BTreeMap<_, _> = command.get_envs().collect();
+        let vars = env(&command);
         for name in ["HOME", "USERPROFILE", "ZCODE_DATA_BASE_DIR"] {
-            assert_eq!(env[OsStr::new(name)], Some(directory.as_os_str()));
+            assert_eq!(vars[name], Some(directory.as_os_str()));
         }
         assert_eq!(
-            env[OsStr::new("ZCODE_STORAGE_DIR")],
+            vars["ZCODE_STORAGE_DIR"],
             Some(directory.join(".zcode").as_os_str())
         );
         for name in [
@@ -47,7 +46,7 @@ mod tests {
             "ZCODE_SESSION_DB_PATH",
             "ZCODE_API_KEY",
         ] {
-            assert_eq!(env[OsStr::new(name)], None);
+            assert_eq!(vars[name], None);
         }
         assert!(command.get_current_dir().is_none());
     }

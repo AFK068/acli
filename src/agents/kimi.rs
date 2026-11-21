@@ -39,25 +39,21 @@ pub(super) fn command(directory: &Path, key: Option<&str>) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
-    use std::ffi::OsStr;
+    use crate::test_support::env;
 
     #[test]
     fn native_uses_its_own_login_without_model_overrides() {
         let directory = Path::new("profile-data");
         let command = command(directory, None);
-        let env: BTreeMap<_, _> = command.get_envs().collect();
-        assert_eq!(
-            env[OsStr::new("KIMI_CODE_HOME")],
-            Some(directory.as_os_str())
-        );
+        let vars = env(&command);
+        assert_eq!(vars["KIMI_CODE_HOME"], Some(directory.as_os_str()));
         for name in [
             "KIMI_MODEL_NAME",
             "KIMI_MODEL_API_KEY",
             "KIMI_MODEL_BASE_URL",
             "KIMI_CODE_CUSTOM_HEADERS",
         ] {
-            assert_eq!(env[OsStr::new(name)], None);
+            assert_eq!(vars[name], None);
         }
         assert_eq!(command.get_args().count(), 0);
     }
@@ -65,23 +61,13 @@ mod tests {
     #[test]
     fn api_key_uses_kimi_code_endpoint_without_secret_arguments() {
         let command = command(Path::new("profile-data"), Some("test-secret"));
-        let env: BTreeMap<_, _> = command.get_envs().collect();
+        let vars = env(&command);
+        assert_eq!(vars["KIMI_MODEL_API_KEY"], Some("test-secret".as_ref()));
         assert_eq!(
-            env[OsStr::new("KIMI_MODEL_API_KEY")],
-            Some(OsStr::new("test-secret"))
+            vars["KIMI_MODEL_BASE_URL"],
+            Some("https://api.kimi.com/coding/v1".as_ref())
         );
-        assert_eq!(
-            env[OsStr::new("KIMI_MODEL_BASE_URL")],
-            Some(OsStr::new("https://api.kimi.com/coding/v1"))
-        );
-        assert_eq!(
-            env[OsStr::new("KIMI_MODEL_NAME")],
-            Some(OsStr::new("kimi-for-coding"))
-        );
-        assert!(
-            command
-                .get_args()
-                .all(|arg| !arg.to_string_lossy().contains("test-secret"))
-        );
+        assert_eq!(vars["KIMI_MODEL_NAME"], Some("kimi-for-coding".as_ref()));
+        crate::test_support::assert_secret_hidden(&command, "test-secret");
     }
 }

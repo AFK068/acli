@@ -111,32 +111,33 @@ mod tests {
     use super::*;
     use crate::config::Agent;
 
-    #[test]
-    fn keeps_long_lists_in_terminal_scrollback() -> anyhow::Result<()> {
-        let config = Config {
-            profiles: (0..160)
-                .map(|index| {
-                    (
-                        format!("profile-{index:03}"),
-                        Profile::new(Agent::Codex, AuthMode::Native),
-                    )
-                })
-                .collect(),
-        };
+    fn render_profiles(config: &Config) -> anyhow::Result<String> {
         let mut terminal = ratatui::Terminal::with_options(
             ratatui::backend::TestBackend::new(80, 10),
             ratatui::TerminalOptions {
                 viewport: ratatui::Viewport::Inline(1),
             },
         )?;
+        render(&mut terminal, config)?;
+        let backend = terminal.backend();
+        Ok(buffer_text(backend.scrollback()) + &buffer_text(backend.buffer()))
+    }
 
-        render(&mut terminal, &config)?;
-
-        let output = buffer_text(terminal.backend().scrollback())
-            + &buffer_text(terminal.backend().buffer());
-        assert!(output.contains("PROFILE"));
-        assert!(output.contains("AGENT"));
-        assert!(output.contains("AUTH"));
+    #[test]
+    fn keeps_long_lists_in_terminal_scrollback() -> anyhow::Result<()> {
+        let mut config = Config {
+            profiles: Default::default(),
+        };
+        for index in 0..160 {
+            config.profiles.insert(
+                format!("profile-{index:03}"),
+                Profile::new(Agent::Codex, AuthMode::Native),
+            );
+        }
+        let output = render_profiles(&config)?;
+        for heading in ["PROFILE", "AGENT", "AUTH"] {
+            assert!(output.contains(heading));
+        }
         for name in config.profiles.keys() {
             assert!(output.contains(name), "missing profile {name}");
         }
@@ -148,16 +149,7 @@ mod tests {
         let config = Config {
             profiles: Default::default(),
         };
-        let mut terminal = ratatui::Terminal::with_options(
-            ratatui::backend::TestBackend::new(60, 10),
-            ratatui::TerminalOptions {
-                viewport: ratatui::Viewport::Inline(1),
-            },
-        )?;
-
-        render(&mut terminal, &config)?;
-
-        assert!(buffer_text(terminal.backend().buffer()).contains("No profiles configured."));
+        assert!(render_profiles(&config)?.contains("No profiles configured."));
         Ok(())
     }
 

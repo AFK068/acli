@@ -13,18 +13,14 @@ pub(super) fn command(directory: &Path) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
-    use std::ffi::OsStr;
+    use crate::test_support::env;
 
     #[test]
     fn isolates_saved_accounts_and_does_not_use_shell_api_keys() {
         let directory = Path::new("profile-data");
         let command = command(directory);
-        let env: BTreeMap<_, _> = command.get_envs().collect();
-        assert_eq!(
-            env[OsStr::new("PI_CODING_AGENT_DIR")],
-            Some(directory.as_os_str())
-        );
+        let vars = env(&command);
+        assert_eq!(vars["PI_CODING_AGENT_DIR"], Some(directory.as_os_str()));
         for name in [
             "PI_CODING_AGENT_SESSION_DIR",
             "OPENAI_API_KEY",
@@ -32,7 +28,7 @@ mod tests {
             "GEMINI_API_KEY",
             "KIMI_API_KEY",
         ] {
-            assert_eq!(env[OsStr::new(name)], None);
+            assert_eq!(vars[name], None);
         }
         assert!(command.get_current_dir().is_none());
     }

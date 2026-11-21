@@ -32,19 +32,15 @@ pub(super) fn command(directory: &Path, key: Option<&str>) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
-    use std::ffi::OsStr;
+    use crate::test_support::env;
 
     #[test]
     fn native_uses_its_own_login_and_directory() {
         let directory = Path::new("profile-data");
         let command = command(directory, None);
-        let environment: BTreeMap<_, _> = command.get_envs().collect();
-        assert_eq!(
-            environment[OsStr::new("CLAUDE_CONFIG_DIR")],
-            Some(directory.as_os_str())
-        );
-        assert_eq!(environment[OsStr::new("ANTHROPIC_API_KEY")], None);
+        let vars = env(&command);
+        assert_eq!(vars["CLAUDE_CONFIG_DIR"], Some(directory.as_os_str()));
+        assert_eq!(vars["ANTHROPIC_API_KEY"], None);
         assert!(
             command
                 .get_args()
@@ -55,22 +51,15 @@ mod tests {
     #[test]
     fn api_key_is_passed_in_environment_only() {
         let command = command(Path::new("profile-data"), Some("test-secret"));
-        let environment: BTreeMap<_, _> = command.get_envs().collect();
-        assert_eq!(
-            environment[OsStr::new("ANTHROPIC_API_KEY")],
-            Some(OsStr::new("test-secret"))
-        );
-        assert_eq!(environment[OsStr::new("ANTHROPIC_AUTH_TOKEN")], None);
-        assert_eq!(environment[OsStr::new("CLAUDE_CODE_OAUTH_TOKEN")], None);
+        let vars = env(&command);
+        assert_eq!(vars["ANTHROPIC_API_KEY"], Some("test-secret".as_ref()));
+        assert_eq!(vars["ANTHROPIC_AUTH_TOKEN"], None);
+        assert_eq!(vars["CLAUDE_CODE_OAUTH_TOKEN"], None);
         assert!(
             command
                 .get_args()
                 .any(|arg| arg == r#"{"forceLoginMethod":"console"}"#)
         );
-        assert!(
-            command
-                .get_args()
-                .all(|arg| !arg.to_string_lossy().contains("test-secret"))
-        );
+        crate::test_support::assert_secret_hidden(&command, "test-secret");
     }
 }

@@ -13,3 +13,6 @@ fn main() -> anyhow::Result<()> {
 
     cli.execute(&path)
 }
+
+#[cfg(test)]
+mod test_support;

@@ -43,24 +43,28 @@ pub(super) fn command(directory: &Path, credentials: Option<(Provider, &str)>) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
-    use std::ffi::OsStr;
+    use crate::test_support::env;
+
+    use Provider::*;
+    const PROVIDERS: [(Provider, &str, &str); 4] = [
+        (OpenAi, "openai", "OPENAI_API_KEY"),
+        (Anthropic, "anthropic", "ANTHROPIC_API_KEY"),
+        (KimiCodePlanCn, "kimi-code-plan-cn", "KIMI_API_KEY"),
+        (KimiCodePlanGlobal, "kimi-code-plan-global", "KIMI_API_KEY"),
+    ];
 
     #[test]
     fn isolates_credentials_config_and_server() {
         let directory = Path::new("profile-data");
         let command = command(directory, None);
-        let env: BTreeMap<_, _> = command.get_envs().collect();
+        let vars = env(&command);
         for (variable, child) in [
             ("XDG_DATA_HOME", "data"),
             ("XDG_CONFIG_HOME", "config"),
             ("XDG_CACHE_HOME", "cache"),
             ("XDG_STATE_HOME", "state"),
         ] {
-            assert_eq!(
-                env[OsStr::new(variable)],
-                Some(directory.join(child).as_os_str())
-            );
+            assert_eq!(vars[variable], Some(directory.join(child).as_os_str()));
         }
         for name in [
             "OPENCODE_DB",
@@ -69,9 +73,41 @@ mod tests {
             "OPENAI_API_KEY",
             "ANTHROPIC_API_KEY",
         ] {
-            assert_eq!(env[OsStr::new(name)], None);
+            assert_eq!(vars[name], None);
         }
         assert_eq!(command.get_args().collect::<Vec<_>>(), ["--standalone"]);
         assert!(command.get_current_dir().is_none());
+    }
+
+    #[test]
+    fn passes_only_the_selected_providers_key() {
+        for (provider, _, variable) in PROVIDERS {
+            let command = command(Path::new("profile"), Some((provider, "secret")));
+            let vars = env(&command);
+            for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "KIMI_API_KEY"] {
+                assert_eq!(vars[key], (key == variable).then_some("secret".as_ref()));
+            }
+            crate::test_support::assert_secret_hidden(&command, "secret");
+        }
+    }
+
+    #[test]
+    fn policy_allows_only_the_selected_provider() -> anyhow::Result<()> {
+        for (provider, name, _) in PROVIDERS {
+            let command = command(Path::new("profile"), Some((provider, "secret")));
+            let json = env(&command)["OPENCODE_CONFIG_CONTENT"]
+                .unwrap()
+                .to_str()
+                .unwrap();
+            let policy: serde_json::Value = serde_json::from_str(json)?;
+            assert_eq!(
+                policy,
+                serde_json::json!({"policies": [
+                    {"action":"provider.use", "resource":"*", "effect":"deny"},
+                    {"action":"provider.use", "resource":name, "effect":"allow"}
+                ]})
+            );
+        }
+        Ok(())
     }
 }

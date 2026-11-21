@@ -39,14 +39,14 @@ mod tests {
     use super::*;
     use crate::config::{Agent, Profile, storage};
 
-    #[test]
-    fn skills_installed_in_each_profile_reach_every_harness() -> anyhow::Result<()> {
-        let temp = tempfile::tempdir()?;
-        let config = temp.path().join("config.toml");
-        let shared = temp.path().join(".agents/skills");
-        let claude = temp.path().join(".claude");
-        let mut profiles = Vec::new();
-        for (agent, local) in [
+    use crate::test_support::{TestApp, env, write_skill};
+    use std::fs;
+
+    fn install_one_skill_per_harness(
+        app: &TestApp,
+    ) -> anyhow::Result<Vec<(String, std::path::PathBuf)>> {
+        let mut recipients = Vec::new();
+        for (agent, folder) in [
             (Agent::ClaudeCode, "skills"),
             (Agent::Codex, "skills"),
             (Agent::Kimi, "skills"),
@@ -55,94 +55,89 @@ mod tests {
             (Agent::ZCode, ".zcode/skills"),
         ] {
             let name = agent.to_string();
-            let profile = Profile::new(agent, AuthMode::Native);
-            let local = paths::profile_dir(&config, &profile).join(local);
+            let local = app.add_native(&name, agent)?.join(folder);
+            write_skill(&local.join(&name), &name)?;
             let visible = match agent {
-                Agent::ClaudeCode | Agent::ZCode => local.clone(),
-                _ => shared.clone(),
+                Agent::ClaudeCode | Agent::ZCode => local,
+                _ => app.shared.clone(),
             };
-            storage::add_profile(&config, &name, profile)?;
-            let skill = local.join(&name);
-            std::fs::create_dir_all(&skill)?;
-            std::fs::write(skill.join("SKILL.md"), &name)?;
-            profiles.push((name, visible, skill));
+            recipients.push((name, visible));
         }
-        for (recipient, visible, _) in &profiles {
-            prepare(&config, recipient, &shared, &claude)?;
-            for (sender, _, _) in &profiles {
+        Ok(recipients)
+    }
+
+    #[test]
+    fn every_harness_sees_skills_from_all_six_profiles() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        let recipients = install_one_skill_per_harness(&app)?;
+        for (recipient, visible) in &recipients {
+            app.prepare(recipient)?;
+            for (skill, _) in &recipients {
                 assert_eq!(
-                    std::fs::read_to_string(visible.join(sender).join("SKILL.md"))?,
-                    *sender,
-                    "{sender} -> {recipient}"
+                    fs::read_to_string(visible.join(skill).join("SKILL.md"))?,
+                    *skill
                 );
             }
         }
-        for (_, _, skill) in &profiles {
-            std::fs::remove_dir_all(skill)?;
-        }
-        for (recipient, _, _) in &profiles {
-            prepare(&config, recipient, &shared, &claude)?;
-        }
-        assert!(crate::skills::list(&shared)?.is_empty());
         Ok(())
     }
 
     #[test]
-    fn duplicate_skills_keep_their_originals_and_fall_back_after_removal() -> anyhow::Result<()> {
-        let temp = tempfile::tempdir()?;
-        let config = temp.path().join("config.toml");
-        let shared = temp.path().join("shared");
-        let claude = temp.path().join(".claude");
-        for (name, agent) in [("a", Agent::Codex), ("b", Agent::ClaudeCode)] {
-            let profile = Profile::new(agent, AuthMode::Native);
-            let local = paths::profile_dir(&config, &profile).join("skills/review");
-            storage::add_profile(&config, name, profile)?;
-            std::fs::create_dir_all(&local)?;
-            std::fs::write(local.join("SKILL.md"), name)?;
-        }
-        prepare(&config, "b", &shared, &claude)?;
-        assert_eq!(
-            std::fs::read_to_string(shared.join("review/SKILL.md"))?,
-            "a"
-        );
-        let profiles = profiles::load(&config)?;
-        let source = paths::profile_dir(&config, profiles.profile("a")?).join("skills/review");
-        std::fs::remove_dir_all(source)?;
-        prepare(&config, "a", &shared, &claude)?;
-        assert_eq!(
-            std::fs::read_to_string(shared.join("review/SKILL.md"))?,
-            "b"
-        );
+    fn deleting_the_source_does_not_republish_links_from_receivers() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        let source = app
+            .add_native("sender", Agent::Codex)?
+            .join("skills/review");
+        let receiver = app
+            .add_native("receiver", Agent::ClaudeCode)?
+            .join("skills/review");
+        write_skill(&source, "review")?;
+        app.prepare("receiver")?;
+        assert!(receiver.join("SKILL.md").is_file());
+        fs::remove_dir_all(source)?;
+        app.prepare("receiver")?;
+        assert!(receiver.symlink_metadata().is_err());
+        assert!(crate::skills::list(&app.shared)?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn duplicate_skills_fall_back_to_the_remaining_source() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        let first = app.add_native("a", Agent::Codex)?.join("skills/review");
+        let second = app
+            .add_native("b", Agent::ClaudeCode)?
+            .join("skills/review");
+        write_skill(&first, "a")?;
+        write_skill(&second, "b")?;
+        let shared = app.shared.join("review/SKILL.md");
+        app.prepare("b")?;
+        assert_eq!(fs::read_to_string(&shared)?, "a");
+        fs::remove_dir_all(first)?;
+        app.prepare("a")?;
+        assert_eq!(fs::read_to_string(shared)?, "b");
         Ok(())
     }
 
     #[test]
     fn reports_missing_profile() -> anyhow::Result<()> {
-        let directory = tempfile::tempdir()?;
-        let error = prepare(
-            &directory.path().join("config.toml"),
-            "missing",
-            &directory.path().join("shared"),
-            &directory.path().join("claude"),
-        )
-        .unwrap_err();
-        assert_eq!(error.to_string(), "Profile 'missing' not found");
+        let app = TestApp::new()?;
+        assert_eq!(
+            app.prepare("missing").unwrap_err().to_string(),
+            "Profile 'missing' not found"
+        );
         Ok(())
     }
 
     #[test]
     fn reports_missing_saved_api_key() -> anyhow::Result<()> {
-        let directory = tempfile::tempdir()?;
-        let path = directory.path().join("config.toml");
-        let profile = Profile::new(Agent::Codex, AuthMode::Api);
-        storage::add_profile(&path, "work", profile)?;
-        let error = prepare(
-            &path,
+        let app = TestApp::new()?;
+        storage::add_profile(
+            &app.config,
             "work",
-            &directory.path().join("shared"),
-            &directory.path().join("claude"),
-        )
-        .unwrap_err();
+            Profile::new(Agent::Codex, AuthMode::Api),
+        )?;
+        let error = app.prepare("work").unwrap_err();
         assert_eq!(
             error.to_string(),
             "Could not load API key for profile 'work'"
@@ -152,27 +147,14 @@ mod tests {
     }
 
     #[test]
-    fn prepares_profile_directory_without_changing_working_directory() -> anyhow::Result<()> {
-        let directory = tempfile::tempdir()?;
-        let path = directory.path().join("config.toml");
-        let profile = Profile::new(Agent::Codex, AuthMode::Native);
-        let expected = paths::profile_dir(&path, &profile);
-        storage::add_profile(&path, "personal", profile)?;
-        std::fs::remove_dir(&expected)?;
-        let command = prepare(
-            &path,
-            "personal",
-            &directory.path().join("shared"),
-            &directory.path().join("claude"),
-        )?;
-        assert!(expected.is_dir());
-        assert_eq!(command.get_program(), "codex");
+    fn launch_recreates_the_profile_directory_and_keeps_cwd() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        let dir = app.add_native("personal", Agent::Codex)?;
+        fs::remove_dir(&dir)?;
+        let command = app.prepare("personal")?;
+        assert!(dir.is_dir());
         assert!(command.get_current_dir().is_none());
-        assert!(
-            command.get_envs().any(|(name, value)| {
-                name == "CODEX_HOME" && value == Some(expected.as_os_str())
-            })
-        );
+        assert_eq!(env(&command)["CODEX_HOME"], Some(dir.as_os_str()));
         Ok(())
     }
 }

@@ -46,6 +46,18 @@ pub(crate) fn entry(id: Uuid) -> anyhow::Result<keyring::Entry> {
 }
 
 #[cfg(test)]
+pub(crate) fn set_mock_error(id: Uuid, error: keyring::Error) -> anyhow::Result<()> {
+    let entry = entry(id)?;
+    entry
+        .inner
+        .as_any()
+        .downcast_ref::<keyring_core::mock::Cred>()
+        .unwrap()
+        .set_error(error);
+    Ok(())
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -75,13 +87,7 @@ mod tests {
     #[test]
     fn does_not_expose_invalid_secret_bytes() -> anyhow::Result<()> {
         let id = Uuid::new_v4();
-        let entry = entry(id)?;
-        let mock = entry
-            .inner
-            .as_any()
-            .downcast_ref::<keyring_core::mock::Cred>()
-            .unwrap();
-        mock.set_error(keyring::Error::BadEncoding(b"test-secret".to_vec()));
+        set_mock_error(id, keyring::Error::BadEncoding(b"test-secret".to_vec()))?;
         let error = load(id).unwrap_err();
         assert!(!format!("{error:?}").contains("test-secret"));
         assert!(error.to_string().contains("not valid text"));
