@@ -11,23 +11,18 @@ pub(crate) fn add(
     key: Option<&str>,
 ) -> anyhow::Result<()> {
     storage::load(path)?.validate_new_profile(name, &profile)?;
-    let key = match profile.auth {
-        AuthMode::Api => Some(key.context("API key is required")?),
-        AuthMode::Native => None,
-    };
+    if profile.auth == AuthMode::Native {
+        return storage::add_profile(path, name, profile);
+    }
+
     let id = profile.id;
-    if let Some(key) = key {
-        credentials::save(id, key)?;
+    credentials::save(id, key.context("API key is required")?)?;
+    let result = storage::add_profile(path, name, profile);
+    if let Err(error) = &result {
+        credentials::delete(id)
+            .with_context(|| format!("{error}; could not remove the unsaved profile's API key"))?;
     }
-    if let Err(error) = storage::add_profile(path, name, profile) {
-        if key.is_some() {
-            credentials::delete(id).with_context(|| {
-                format!("{error}; could not remove the unsaved profile's API key")
-            })?;
-        }
-        return Err(error);
-    }
-    Ok(())
+    result
 }
 
 pub(crate) fn remove(path: &Path, name: &str) -> anyhow::Result<()> {
