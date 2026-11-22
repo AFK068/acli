@@ -26,7 +26,7 @@ impl TestApp {
     }
 
     pub fn prepare(&self, name: &str) -> anyhow::Result<Command> {
-        crate::app::launch::prepare(&self.config, name, &self.shared, &self.claude, &[])
+        crate::app::launch::prepare(&self.config, Some(name), &self.shared, &self.claude, &[])
     }
 
     pub fn add_native(&self, name: &str, agent: Agent) -> anyhow::Result<PathBuf> {

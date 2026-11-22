@@ -11,6 +11,7 @@ pub(crate) mod storage;
 #[derive(Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct Config {
+    pub(crate) default_profile: Option<String>,
     pub(crate) profiles: BTreeMap<String, Profile>,
     pub(crate) mcp: McpServers,
 }

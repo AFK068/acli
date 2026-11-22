@@ -63,9 +63,10 @@ fn render<B: ratatui::backend::Backend>(
     let profiles: Vec<_> = config.profiles.iter().collect();
     // Bound each render buffer while allowing long lists to flow into scrollback.
     for chunk in profiles.chunks(ROWS_PER_BLOCK) {
-        let rows = chunk
-            .iter()
-            .map(|(name, profile)| profile_row(name, profile));
+        let rows = chunk.iter().map(|(name, profile)| {
+            let is_default = config.default_profile.as_deref() == Some(name.as_str());
+            profile_row(name, profile, is_default)
+        });
         let widths = [3, 3, 2].map(ratatui::layout::Constraint::Fill);
         let header = ratatui::widgets::Row::new(["PROFILE", "AGENT", "AUTH"])
             .bold()
@@ -93,13 +94,22 @@ fn insert_widget<B: ratatui::backend::Backend>(
     })
 }
 
-fn profile_row<'a>(name: &'a str, profile: &Profile) -> ratatui::widgets::Row<'a> {
+fn profile_row<'a>(
+    name: &'a str,
+    profile: &Profile,
+    is_default: bool,
+) -> ratatui::widgets::Row<'a> {
+    let name = if is_default {
+        ratatui::widgets::Cell::from(format!("* {name}"))
+    } else {
+        ratatui::widgets::Cell::from(name)
+    };
     let color = match profile.auth {
         AuthMode::Native => ratatui::style::Color::Magenta,
         AuthMode::Api => ratatui::style::Color::Cyan,
     };
     ratatui::widgets::Row::new([
-        ratatui::widgets::Cell::from(name).bold(),
+        name.bold(),
         ratatui::widgets::Cell::from(profile.agent.to_string()),
         ratatui::widgets::Cell::from(profile.auth.to_string()).fg(color),
     ])

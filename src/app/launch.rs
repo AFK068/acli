@@ -7,12 +7,15 @@ use crate::config::{Agent, AuthMode, paths, storage};
 
 pub(crate) fn prepare(
     path: &Path,
-    name: &str,
+    name: Option<&str>,
     shared: &Path,
     claude_home: &Path,
     mcp_dirs: &[(Agent, PathBuf)],
 ) -> anyhow::Result<Command> {
     let config = storage::load(path)?;
+    let name = name
+        .or(config.default_profile.as_deref())
+        .context("No default profile set. Use 'acli default NAME' or 'acli run NAME'")?;
     let profile = config.profile(name)?;
 
     let key = match profile.auth {
@@ -121,6 +124,26 @@ mod tests {
             app.prepare("missing").unwrap_err().to_string(),
             "Profile 'missing' not found"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn launch_uses_default_only_without_an_explicit_name() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        app.add_native("personal", Agent::ClaudeCode)?;
+        app.add_native("work", Agent::Codex)?;
+        let launch_default = || prepare(&app.config, None, &app.shared, &app.claude, &[]);
+        assert!(
+            launch_default()
+                .unwrap_err()
+                .to_string()
+                .contains("No default profile set")
+        );
+
+        storage::set_default(&app.config, Some("work"))?;
+        assert_eq!(launch_default()?.get_program(), "codex");
+        assert_eq!(app.prepare("personal")?.get_program(), "claude");
+        assert!(app.prepare("missing").is_err());
         Ok(())
     }
 

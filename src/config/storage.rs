@@ -9,6 +9,29 @@ pub(crate) fn load(path: &Path) -> anyhow::Result<Config> {
     decode(path, read_document(path)?)
 }
 
+pub(crate) fn set_default(path: &Path, name: Option<&str>) -> anyhow::Result<()> {
+    edit(path, |config, document| {
+        if let Some(name) = name {
+            config.profile(name)?;
+            write_default(document, name);
+        } else {
+            document.remove("default_profile");
+        }
+        Ok(())
+    })
+}
+
+fn write_default(document: &mut DocumentMut, name: &str) {
+    let mut value = toml_edit::Value::from(name);
+    if let Some(previous) = document
+        .get("default_profile")
+        .and_then(toml_edit::Item::as_value)
+    {
+        value.decor_mut().clone_from(previous.decor());
+    }
+    document.insert("default_profile", toml_edit::Item::Value(value));
+}
+
 pub(crate) fn add_profile(path: &Path, name: &str, profile: Profile) -> anyhow::Result<()> {
     edit(path, |config, document| {
         config.validate_new_profile(name, &profile)?;
@@ -25,6 +48,9 @@ pub(crate) fn remove_profile(path: &Path, name: &str) -> anyhow::Result<Profile>
             .remove(name)
             .with_context(|| format!("Profile '{name}' not found"))?;
         table(document, "profiles")?.remove(name);
+        if config.default_profile.as_deref() == Some(name) {
+            document.remove("default_profile");
+        }
         Ok(profile)
     })
 }
@@ -38,6 +64,9 @@ pub(crate) fn rename_profile(path: &Path, name: &str, new_name: &str) -> anyhow:
             .remove(name)
             .with_context(|| format!("Profile '{name}' not found"))?;
         profiles.insert(new_name, profile);
+        if config.default_profile.as_deref() == Some(name) {
+            write_default(document, new_name);
+        }
         Ok(())
     })
 }
@@ -116,6 +145,30 @@ mod tests {
 
     fn native_profile() -> Profile {
         Profile::new(Agent::Codex, AuthMode::Native)
+    }
+
+    #[test]
+    fn default_follows_rename_and_is_cleared_on_removal() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
+        let path = &app.config;
+        app.add_native("work.test", Agent::Codex)?;
+        fs::write(
+            path,
+            format!(
+                "default_profile = 'work.test' # keep\n{}",
+                fs::read_to_string(path)?
+            ),
+        )?;
+
+        assert!(set_default(path, Some("missing")).is_err());
+        assert_eq!(load(path)?.default_profile.as_deref(), Some("work.test"));
+        rename_profile(path, "work.test", "renamed")?;
+        assert_eq!(load(path)?.default_profile.as_deref(), Some("renamed"));
+        assert!(fs::read_to_string(path)?.contains("# keep"));
+
+        remove_profile(path, "renamed")?;
+        assert!(load(path)?.default_profile.is_none());
+        Ok(())
     }
 
     #[test]

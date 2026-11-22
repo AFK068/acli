@@ -3,18 +3,18 @@ use std::io;
 use std::path::Path;
 use std::process::{Command, ExitStatus};
 
-pub(super) fn run(path: &Path, name: &str) -> anyhow::Result<()> {
+pub(super) fn run(path: &Path, name: Option<&str>) -> anyhow::Result<()> {
     execute(&mut prepare(path, name)?)
 }
 
 pub(super) fn wait(path: &Path, name: &str) -> anyhow::Result<ExitStatus> {
-    let mut command = prepare(path, name)?;
+    let mut command = prepare(path, Some(name))?;
     command
         .status()
         .map_err(|error| start_error(command.get_program(), error))
 }
 
-fn prepare(path: &Path, name: &str) -> anyhow::Result<Command> {
+fn prepare(path: &Path, name: Option<&str>) -> anyhow::Result<Command> {
     crate::app::launch::prepare(
         path,
         name,

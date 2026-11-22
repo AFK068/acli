@@ -21,7 +21,8 @@ impl Cli {
             Command::Skills(cmd) => cmd.execute(path),
             Command::List => list_profiles::run(path),
             Command::Profile(cmd) => cmd.execute(path),
-            Command::Run { name } => run_agent::run(path, &name),
+            Command::Run { name } => run_agent::run(path, name.as_deref()),
+            Command::Default { name, clear } => default_profile(path, name.as_deref(), clear),
             Command::Tui => tui::run(path),
         }
     }
@@ -31,8 +32,14 @@ impl Cli {
 enum Command {
     /// List configured profiles.
     List,
-    /// Run an agent using a saved profile.
-    Run { name: String },
+    /// Run the named profile or the default profile.
+    Run { name: Option<String> },
+    /// Show, set or clear the default profile.
+    Default {
+        name: Option<String>,
+        #[arg(long, conflicts_with = "name")]
+        clear: bool,
+    },
     /// Browse profiles, skills and MCP servers in an interactive terminal.
     Tui,
     /// Manage local MCP servers shared by all agent profiles.
@@ -44,6 +51,24 @@ enum Command {
     /// Manage agent profiles.
     #[command(subcommand)]
     Profile(ProfileCommand),
+}
+
+fn default_profile(path: &std::path::Path, name: Option<&str>, clear: bool) -> anyhow::Result<()> {
+    use crate::config::storage;
+    if let Some(name) = name {
+        storage::set_default(path, Some(name))?;
+        println!("Default profile set to '{name}'");
+    } else if clear {
+        storage::set_default(path, None)?;
+        println!("Default profile cleared");
+    } else {
+        let config = storage::load(path)?;
+        match config.default_profile {
+            Some(name) => println!("{name}"),
+            None => println!("No default profile set"),
+        }
+    }
+    Ok(())
 }
 
 #[derive(Subcommand)]
