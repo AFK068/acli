@@ -20,11 +20,11 @@ pub(super) enum Command {
 }
 
 impl Command {
-    pub(super) fn execute(&self, path: &Path) -> anyhow::Result<()> {
+    pub(super) fn execute(self, path: &Path) -> anyhow::Result<()> {
         match self {
             Self::Add { name, program } => {
-                let (name, server) = match (name, McpServer::from_argv(program.clone())) {
-                    (Some(name), Some(server)) => (name.clone(), server),
+                let (name, server) = match (name, McpServer::from_argv(program)) {
+                    (Some(name), Some(server)) => (name, server),
                     _ => prompt()?,
                 };
                 storage::update_mcp(path, &name, Some(&server))?;
@@ -40,7 +40,7 @@ impl Command {
                 }
             }
             Self::Remove { name } => {
-                storage::update_mcp(path, name, None)?;
+                storage::update_mcp(path, &name, None)?;
                 println!("Removed MCP server '{name}'");
             }
         }

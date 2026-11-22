@@ -249,9 +249,10 @@ fn choose(
             {
                 continue;
             }
-            let action: fn(OsString) -> Action = match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => return Ok(None),
-                KeyCode::Tab | KeyCode::BackTab => {
+            let selected = selection.selected().and_then(|index| rows.get(index));
+            match (key.code, selected) {
+                (KeyCode::Char('q') | KeyCode::Esc, _) => return Ok(None),
+                (KeyCode::Tab | KeyCode::BackTab, _) => {
                     let count = Page::TABS.len();
                     let step = if key.code == KeyCode::Tab {
                         1
@@ -263,22 +264,19 @@ fn choose(
                     message = "";
                     break;
                 }
-                KeyCode::Up if !rows.is_empty() => {
-                    selection.select_previous();
-                    continue;
+                (KeyCode::Up, Some(_)) => selection.select_previous(),
+                (KeyCode::Down, Some(_)) => selection.select_next(),
+                (KeyCode::Char('a'), _) => return Ok(Some(Action::Add)),
+                (KeyCode::Char('d'), Some(row)) => {
+                    return Ok(Some(Action::Remove(row.name.clone())));
                 }
-                KeyCode::Down if !rows.is_empty() => {
-                    selection.select_next();
-                    continue;
+                (KeyCode::Enter, Some(row)) if page == Page::Profiles => {
+                    return Ok(Some(Action::Run(row.name.clone())));
                 }
-                KeyCode::Char('a') => return Ok(Some(Action::Add)),
-                KeyCode::Char('d') => Action::Remove,
-                KeyCode::Enter if page == Page::Profiles => Action::Run,
-                KeyCode::Char('r') if page == Page::Profiles => Action::Rename,
-                _ => continue,
-            };
-            if let Some(row) = selection.selected().and_then(|index| rows.get(index)) {
-                return Ok(Some(action(row.name.clone())));
+                (KeyCode::Char('r'), Some(row)) if page == Page::Profiles => {
+                    return Ok(Some(Action::Rename(row.name.clone())));
+                }
+                _ => {}
             }
         }
     }

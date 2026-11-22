@@ -15,13 +15,13 @@ pub(crate) struct Cli {
 }
 
 impl Cli {
-    pub(crate) fn execute(&self, path: &std::path::Path) -> anyhow::Result<()> {
-        match &self.command {
+    pub(crate) fn execute(self, path: &std::path::Path) -> anyhow::Result<()> {
+        match self.command {
             Command::Mcp(cmd) => cmd.execute(path),
             Command::Skills(cmd) => cmd.execute(path),
             Command::List => list_profiles::run(path),
             Command::Profile(cmd) => cmd.execute(path),
-            Command::Run { name } => run_agent::run(path, name),
+            Command::Run { name } => run_agent::run(path, &name),
             Command::Tui => tui::run(path),
         }
     }
