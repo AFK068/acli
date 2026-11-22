@@ -138,37 +138,33 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn each_profile_shares_its_native_server_without_importing_its_own_copy() -> anyhow::Result<()>
-    {
+    fn shares_native_servers_without_duplicating_them() -> anyhow::Result<()> {
         use Agent::*;
         let app = TestApp::new()?;
-        for (agent, file, config) in [
-            (
-                ClaudeCode,
-                ".claude.json",
-                r#"{"mcpServers":{"claude-code":{"type":"stdio","command":"run","env":{}}},"projects":{"repo":{"mcpServers":{"private":{"command":"run"}}}}}"#,
-            ),
-            (Codex, "config.toml", "[mcp_servers.codex]\ncommand='run'"),
-            (
-                Kimi,
-                "mcp.json",
-                r#"{"mcpServers":{"kimi":{"command":"run"}}}"#,
-            ),
-            (Pi, "mcp.json", r#"{"mcpServers":{"pi":{"command":"run"}}}"#),
-            (
-                OpenCode,
-                "config/opencode/opencode.jsonc",
-                "{ // comment\n \"mcp\":{\"servers\":{\"opencode\":{\"type\":\"local\",\"command\":[\"run\",\"two words\"],},},},}",
-            ),
-            (
-                ZCode,
-                ".agents/mcp.json",
-                r#"{"mcpServers":{"z-code":{"command":"run"}}}"#,
-            ),
+        for (agent, file) in [
+            (ClaudeCode, ".claude.json"),
+            (Codex, "config.toml"),
+            (Kimi, "mcp.json"),
+            (Pi, "mcp.json"),
+            (OpenCode, "config/opencode/opencode.jsonc"),
+            (ZCode, ".agents/mcp.json"),
         ] {
-            let path = app.add_native(&agent.to_string(), agent)?.join(file);
+            let name = agent.to_string();
+            let path = app.add_native(&name, agent)?.join(file);
+            let input = match agent {
+                ClaudeCode => json!({
+                    "mcpServers": { (name): {"type":"stdio", "command":"run", "env":{}} },
+                    "projects": {"repo": {"mcpServers": {"private": {"command":"run"}}}},
+                }).to_string(),
+                Codex => "[mcp_servers.codex]\ncommand='run'".into(),
+                OpenCode => r#"{
+                    // OpenCode also accepts trailing commas.
+                    "mcp": {"servers": {"opencode": {"type":"local", "command":["run", "two words"],},},},
+                }"#.into(),
+                Kimi | Pi | ZCode => json!({"mcpServers": { (name): {"command":"run"} }}).to_string(),
+            };
             fs::create_dir_all(path.parent().unwrap())?;
-            fs::write(path, config)?;
+            fs::write(path, input)?;
         }
         let config = storage::load(&app.config)?;
         for name in config.profiles.keys() {

@@ -44,9 +44,9 @@ mod tests {
     use crate::test_support::{TestApp, env, write_skill};
     use std::fs;
 
-    fn install_one_skill_per_harness(
-        app: &TestApp,
-    ) -> anyhow::Result<Vec<(String, std::path::PathBuf)>> {
+    #[test]
+    fn every_harness_sees_skills_from_all_six_profiles() -> anyhow::Result<()> {
+        let app = TestApp::new()?;
         let mut recipients = Vec::new();
         for (agent, folder) in [
             (Agent::ClaudeCode, "skills"),
@@ -65,13 +65,6 @@ mod tests {
             };
             recipients.push((name, visible));
         }
-        Ok(recipients)
-    }
-
-    #[test]
-    fn every_harness_sees_skills_from_all_six_profiles() -> anyhow::Result<()> {
-        let app = TestApp::new()?;
-        let recipients = install_one_skill_per_harness(&app)?;
         for (recipient, visible) in &recipients {
             app.prepare(recipient)?;
             for (skill, _) in &recipients {

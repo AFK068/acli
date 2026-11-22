@@ -209,14 +209,6 @@ mod tests {
     }
 
     #[test]
-    fn opencode_api_requires_a_provider() -> anyhow::Result<()> {
-        let mut profile = Profile::new(Agent::OpenCode, AuthMode::Api);
-        assert!(profile.validate("work").is_err());
-        profile.provider = Some(Provider::OpenAi);
-        profile.validate("work")
-    }
-
-    #[test]
     fn rejects_provider_outside_opencode_api() {
         use Agent::*;
         for agent in [OpenCode, Codex, ClaudeCode, Kimi, Pi, ZCode] {
@@ -237,14 +229,6 @@ mod tests {
         );
         let error = toml_edit::de::from_str::<Profile>(&input).unwrap_err();
         assert!(error.to_string().contains("unknown field"));
-    }
-
-    #[test]
-    fn rejects_nil_profile_id() {
-        let mut profile = Profile::new(Agent::Codex, AuthMode::Native);
-        profile.id = uuid::Uuid::nil();
-        let error = profile.validate("personal").unwrap_err();
-        assert!(error.to_string().contains("empty ID"));
     }
 
     #[test]

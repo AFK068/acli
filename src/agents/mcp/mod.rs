@@ -141,6 +141,7 @@ mod tests {
 
     #[test]
     fn file_backed_profiles_share_then_remove_only_their_managed_server() -> anyhow::Result<()> {
+        let servers = fixture();
         for (agent, file, key) in [
             (Agent::Kimi, "mcp.json", "/mcpServers"),
             (Agent::Pi, "mcp.json", "/mcpServers"),
@@ -148,15 +149,16 @@ mod tests {
         ] {
             let profile = tempfile::tempdir()?;
             let path = profile.path().join(file);
-            sync(agent, profile.path(), &fixture())?;
+            sync(agent, profile.path(), &servers)?;
             let mut config = read(&path)?;
             let entries = config.pointer_mut(key).unwrap();
             assert_eq!(entries["acli-docs"]["args"], json!(["two words"]));
             entries["mine"] = json!({"command":"other"});
             entries["acli-docs"]["enabled"] = json!(false);
-            fs::write(&path, config.to_string())?;
-            sync(agent, profile.path(), &fixture())?;
-            assert_eq!(read(&path)?, config);
+            let original = config.to_string();
+            fs::write(&path, &original)?;
+            sync(agent, profile.path(), &servers)?;
+            assert_eq!(fs::read_to_string(&path)?, original);
             sync(agent, profile.path(), &McpServers::new())?;
             assert_eq!(
                 read(&path)?.pointer(key),

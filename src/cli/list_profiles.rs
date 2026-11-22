@@ -149,11 +149,6 @@ mod tests {
     }
 
     fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
-        buffer
-            .content
-            .chunks(usize::from(buffer.area.width))
-            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-            .collect::<Vec<_>>()
-            .join("\n")
+        buffer.content.iter().map(|cell| cell.symbol()).collect()
     }
 }

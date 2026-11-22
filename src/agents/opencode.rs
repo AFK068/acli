@@ -92,23 +92,7 @@ mod tests {
     }
 
     #[test]
-    fn passes_only_the_selected_providers_key() {
-        for (provider, _, variable) in PROVIDERS {
-            let command = command(
-                Path::new("profile"),
-                Some((provider, "secret")),
-                &McpServers::new(),
-            );
-            let vars = env(&command);
-            for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "KIMI_API_KEY"] {
-                assert_eq!(vars[key], (key == variable).then_some("secret".as_ref()));
-            }
-            crate::test_support::assert_secret_hidden(&command, "secret");
-        }
-    }
-
-    #[test]
-    fn shared_server_keeps_the_provider_policy() -> anyhow::Result<()> {
+    fn limits_credentials_to_the_selected_provider_with_shared_mcp() -> anyhow::Result<()> {
         let servers = McpServers::from([(
             "docs".into(),
             crate::config::McpServer {
@@ -116,13 +100,16 @@ mod tests {
                 args: vec!["two words".into()],
             },
         )]);
-        for (provider, name, _) in PROVIDERS {
+        for (provider, name, variable) in PROVIDERS {
             let command = command(Path::new("profile"), Some((provider, "secret")), &servers);
-            let json = env(&command)["OPENCODE_CONFIG_CONTENT"]
-                .unwrap()
-                .to_str()
-                .unwrap();
-            let policy: serde_json::Value = serde_json::from_str(json)?;
+            let vars = env(&command);
+            for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "KIMI_API_KEY"] {
+                assert_eq!(vars[key], (key == variable).then_some("secret".as_ref()));
+            }
+            crate::test_support::assert_secret_hidden(&command, "secret");
+
+            let config = vars["OPENCODE_CONFIG_CONTENT"].unwrap().to_str().unwrap();
+            let policy: serde_json::Value = serde_json::from_str(config)?;
             assert_eq!(
                 policy,
                 serde_json::json!({"mcp":{"servers":{"acli-docs":{"type":"local","command":["fixture","two words"]}}},"policies": [

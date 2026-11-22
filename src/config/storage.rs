@@ -111,13 +111,12 @@ fn table<'a>(
 mod tests {
     use super::*;
     use crate::config::{Agent, AuthMode, paths::profile_dir};
+    use crate::test_support::TestApp;
+    use std::fs;
 
     fn native_profile() -> Profile {
         Profile::new(Agent::Codex, AuthMode::Native)
     }
-
-    use crate::test_support::TestApp;
-    use std::fs;
 
     #[test]
     fn shared_mcp_round_trips_without_overwriting_existing_settings() -> anyhow::Result<()> {
@@ -243,11 +242,10 @@ mod tests {
         let app = TestApp::new()?;
         let mut invalid = native_profile();
         invalid.id = uuid::Uuid::nil();
-        for profile in [
-            invalid,
-            Profile::new(Agent::Pi, AuthMode::Api),
-            Profile::new(Agent::ZCode, AuthMode::Api),
-        ] {
+        let error = add_profile(&app.config, "work", invalid).unwrap_err();
+        assert!(error.to_string().contains("empty ID"));
+        for agent in [Agent::Pi, Agent::ZCode] {
+            let profile = Profile::new(agent, AuthMode::Api);
             assert!(add_profile(&app.config, "work", profile).is_err());
         }
         assert!(add_profile(&app.config, " ", native_profile()).is_err());

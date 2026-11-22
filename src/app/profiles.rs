@@ -59,19 +59,25 @@ mod tests {
     fn saves_key_separately_and_uses_it_for_launch() -> anyhow::Result<()> {
         let app = TestApp::new()?;
         let path = &app.config;
-        for (agent, variable) in [
-            (Agent::Codex, "ACLI_API_KEY"),
-            (Agent::ClaudeCode, "ANTHROPIC_API_KEY"),
-            (Agent::Kimi, "KIMI_MODEL_API_KEY"),
+        for (agent, variable, provider) in [
+            (Agent::Codex, "ACLI_API_KEY", None),
+            (Agent::ClaudeCode, "ANTHROPIC_API_KEY", None),
+            (Agent::Kimi, "KIMI_MODEL_API_KEY", None),
+            (
+                Agent::OpenCode,
+                "ANTHROPIC_API_KEY",
+                Some(Provider::Anthropic),
+            ),
         ] {
             let name = agent.to_string();
-            let profile = Profile::new(agent, AuthMode::Api);
+            let mut profile = Profile::new(agent, AuthMode::Api);
+            profile.provider = provider;
             let id = profile.id;
             add(path, &name, profile, Some("test-secret"))?;
             let saved = std::fs::read_to_string(path)?;
             assert!(!saved.contains("test-secret"));
             assert_eq!(credentials::load(id)?, "test-secret");
-
+            assert_eq!(storage::load(path)?.profile(&name)?.provider, provider);
             assert_eq!(
                 env(&app.prepare(&name)?)[variable],
                 Some("test-secret".as_ref())
@@ -87,23 +93,6 @@ mod tests {
         storage::rename_profile(&app.config, "work", "renamed")?;
         assert_eq!(
             env(&app.prepare("renamed")?)["ACLI_API_KEY"],
-            Some("test-secret".as_ref())
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn opencode_launch_uses_the_saved_provider() -> anyhow::Result<()> {
-        let app = TestApp::new()?;
-        let mut profile = Profile::new(Agent::OpenCode, AuthMode::Api);
-        profile.provider = Some(Provider::Anthropic);
-        add(&app.config, "work", profile, Some("test-secret"))?;
-        assert_eq!(
-            storage::load(&app.config)?.profile("work")?.provider,
-            Some(Provider::Anthropic)
-        );
-        assert_eq!(
-            env(&app.prepare("work")?)["ANTHROPIC_API_KEY"],
             Some("test-secret".as_ref())
         );
         Ok(())
