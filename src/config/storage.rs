@@ -1,12 +1,12 @@
 use crate::files;
 use anyhow::Context;
 use std::path::Path;
-use toml_edit::DocumentMut;
+use toml_edit::{DocumentMut, ImDocument};
 
 use super::{Config, McpServer, Profile, paths};
 
 pub(crate) fn load(path: &Path) -> anyhow::Result<Config> {
-    parse(&read(path)?).with_context(|| format!("Invalid configuration '{}'", path.display()))
+    decode(path, read_document(path)?)
 }
 
 pub(crate) fn add_profile(path: &Path, name: &str, profile: Profile) -> anyhow::Result<()> {
@@ -72,19 +72,28 @@ fn edit<T>(
     files::create_dir(files::parent_dir(path))?;
     // Lock a separate file so replacing the configuration does not release the lock.
     let _lock = files::lock(&path.with_extension("lock"))?;
-    let input = read(path)?;
-    let config =
-        parse(&input).with_context(|| format!("Invalid configuration '{}'", path.display()))?;
-    let mut document = input.parse()?;
+    let document = read_document(path)?;
+    let config = decode(path, document.clone())?;
+    let mut document = document.into_mut();
     let result = update(config, &mut document)?;
     files::write(path, &document.to_string())?;
     Ok(result)
 }
 
-fn parse(input: &str) -> anyhow::Result<Config> {
-    let config: Config = toml_edit::de::from_str(input)?;
-    config.validate()?;
+fn read_document(path: &Path) -> anyhow::Result<ImDocument<String>> {
+    let input = files::read_text(path)?.unwrap_or_default();
+    ImDocument::parse(input).with_context(|| invalid_config(path))
+}
+
+fn decode(path: &Path, document: ImDocument<String>) -> anyhow::Result<Config> {
+    let config: Config =
+        toml_edit::de::from_document(document).with_context(|| invalid_config(path))?;
+    config.validate().with_context(|| invalid_config(path))?;
     Ok(config)
+}
+
+fn invalid_config(path: &Path) -> String {
+    format!("Invalid configuration '{}'", path.display())
 }
 
 fn table<'a>(
@@ -96,16 +105,6 @@ fn table<'a>(
         .or_insert(toml_edit::table())
         .as_table_like_mut()
         .with_context(|| format!("Expected {key} to be a TOML table"))
-}
-
-fn read(path: &Path) -> anyhow::Result<String> {
-    match std::fs::read_to_string(path) {
-        Ok(input) => Ok(input),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(error) => {
-            Err(error).with_context(|| format!("Could not read configuration '{}'", path.display()))
-        }
-    }
 }
 
 #[cfg(test)]

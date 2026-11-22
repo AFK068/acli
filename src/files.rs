@@ -1,5 +1,17 @@
 use anyhow::Context;
-use std::{fs, io::Write, path::Path};
+use std::{
+    fs,
+    io::{ErrorKind, Write},
+    path::Path,
+};
+
+pub(crate) fn read_text(path: &Path) -> anyhow::Result<Option<String>> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("Could not read '{}'", path.display())),
+    }
+}
 
 pub(crate) fn write(path: &Path, contents: &str) -> anyhow::Result<()> {
     // Replace the original only after the entire new file has been written.

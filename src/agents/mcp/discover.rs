@@ -1,10 +1,10 @@
 use super::{ZCODE_COMPAT, ZCODE_NATIVE, managed, shared_name, zcode_uses_compat};
 use crate::config::{Agent, Config, McpServer, McpServers, paths};
+use crate::files;
 use anyhow::Context;
 use serde_json::{Map, Value};
 use std::{
     collections::HashSet,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -86,12 +86,8 @@ fn entries(agent: Agent, dir: &Path) -> anyhow::Result<Map<String, Value>> {
 }
 
 fn section_in(path: &Path, section: &str) -> anyhow::Result<Map<String, Value>> {
-    let text = match fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Map::new()),
-        Err(error) => {
-            return Err(error).with_context(|| format!("Could not read '{}'", path.display()));
-        }
+    let Some(text) = files::read_text(path)? else {
+        return Ok(Map::new());
     };
     let mut config: Value = if path.extension().is_some_and(|ext| ext == "toml") {
         toml_edit::de::from_str(&text)
@@ -125,10 +121,11 @@ fn portable(agent: Agent, mut entry: Value) -> Option<McpServer> {
     }
     if opencode {
         let argv = serde_json::from_value(fields.remove("command")?).ok()?;
-        if fields.is_empty() {
-            return McpServer::from_argv(argv);
-        }
-        return None;
+        return if fields.is_empty() {
+            McpServer::from_argv(argv)
+        } else {
+            None
+        };
     }
     serde_json::from_value(entry).ok()
 }
@@ -138,6 +135,7 @@ mod tests {
     use super::*;
     use crate::{config::storage, test_support::TestApp};
     use serde_json::json;
+    use std::fs;
 
     #[test]
     fn each_profile_shares_its_native_server_without_importing_its_own_copy() -> anyhow::Result<()>

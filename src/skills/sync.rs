@@ -82,11 +82,10 @@ fn publish(shared: &Path, mut wanted: Links) -> anyhow::Result<()> {
 }
 
 fn managed_links(shared: &Path) -> anyhow::Result<Links> {
-    let file = shared.join(STATE);
-    if !file.try_exists()? {
+    let Some(input) = crate::files::read_text(&shared.join(STATE))? else {
         return Ok(Links::new());
-    }
-    Ok(serde_json::from_slice(&fs::read(file)?)?)
+    };
+    Ok(serde_json::from_str(&input)?)
 }
 
 pub(super) fn managed(shared: &Path, name: &str) -> anyhow::Result<bool> {

@@ -1,4 +1,5 @@
 use super::collect_skills;
+use crate::files;
 use anyhow::{Context, ensure};
 use serde::Deserialize;
 use std::{
@@ -29,22 +30,21 @@ struct Installation {
 }
 
 pub(super) fn plugins(home: &Path, folders: &mut Vec<PathBuf>) -> anyhow::Result<()> {
-    let registry = home.join("plugins/installed_plugins.json");
-    if !registry.try_exists()? {
+    let path = home.join("plugins/installed_plugins.json");
+    let Some(registry) = files::read_text(&path)? else {
         return Ok(());
-    }
-    let registry: Registry = serde_json::from_slice(&fs::read(&registry)?)
-        .with_context(|| format!("Invalid Claude plugin registry: {}", registry.display()))?;
+    };
+    let registry: Registry = serde_json::from_str(&registry)
+        .with_context(|| format!("Invalid Claude plugin registry: {}", path.display()))?;
     ensure!(
         registry.version == 2,
         "Unsupported Claude plugin registry version {}",
         registry.version
     );
-    let settings = home.join("settings.json");
-    if !settings.try_exists()? {
+    let Some(settings) = files::read_text(&home.join("settings.json"))? else {
         return Ok(());
-    }
-    let settings: serde_json::Value = serde_json::from_slice(&fs::read(&settings)?)?;
+    };
+    let settings: serde_json::Value = serde_json::from_str(&settings)?;
     for (id, installs) in registry.plugins {
         if settings["enabledPlugins"][&id].as_bool() != Some(true) {
             continue;
@@ -65,6 +65,7 @@ fn plugin_skills(plugin: &Path, folders: &mut Vec<PathBuf>) -> anyhow::Result<()
         return Ok(());
     }
     let manifest: serde_json::Value = serde_json::from_slice(&fs::read(manifest)?)?;
+    let plugin_root = plugin.canonicalize()?;
     let extra = &manifest["skills"];
     let paths = extra
         .as_array()
@@ -75,7 +76,7 @@ fn plugin_skills(plugin: &Path, folders: &mut Vec<PathBuf>) -> anyhow::Result<()
             continue;
         };
         let path = plugin.join(relative);
-        if !path.is_dir() || !path.canonicalize()?.starts_with(plugin.canonicalize()?) {
+        if !path.is_dir() || !path.canonicalize()?.starts_with(&plugin_root) {
             continue;
         }
         if path.join("SKILL.md").is_file() {

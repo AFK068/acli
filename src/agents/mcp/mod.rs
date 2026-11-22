@@ -5,7 +5,7 @@ use crate::config::{Agent, McpServers};
 use crate::files;
 use anyhow::{Context, ensure};
 use serde_json::{Map, Value, json};
-use std::{fs, path::Path};
+use std::path::Path;
 
 const PREFIX: &str = "acli-";
 const ZCODE_NATIVE: &str = ".zcode/cli/config.json";
@@ -68,12 +68,10 @@ fn zcode_uses_compat(profile: &Path) -> anyhow::Result<bool> {
 }
 
 fn read(path: &Path) -> anyhow::Result<Value> {
-    match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .with_context(|| format!("Invalid JSON in '{}'", path.display())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({})),
-        Err(e) => Err(e).with_context(|| format!("Could not read '{}'", path.display())),
-    }
+    let Some(text) = files::read_text(path)? else {
+        return Ok(json!({}));
+    };
+    serde_json::from_str(&text).with_context(|| format!("Invalid JSON in '{}'", path.display()))
 }
 
 fn update(path: &Path, keys: &[&str], wanted: &Map<String, Value>) -> anyhow::Result<()> {
@@ -91,8 +89,9 @@ fn update(path: &Path, keys: &[&str], wanted: &Map<String, Value>) -> anyhow::Re
     let entries = section
         .as_object_mut()
         .with_context(|| format!("Invalid MCP server table in '{}'", path.display()))?;
-    let previous = entries.clone();
+    let previous_len = entries.len();
     entries.retain(|name, entry| !managed(name, entry) || wanted.contains_key(name));
+    let mut changed = entries.len() != previous_len;
     for (name, server) in wanted {
         if let Some(existing) = entries.get_mut(name) {
             ensure!(
@@ -100,13 +99,18 @@ fn update(path: &Path, keys: &[&str], wanted: &Map<String, Value>) -> anyhow::Re
                 "MCP server '{name}' already exists in '{}'",
                 path.display()
             );
-            existing["command"] = server["command"].clone();
-            existing["args"] = server["args"].clone();
+            for field in ["command", "args"] {
+                if existing[field] != server[field] {
+                    existing[field] = server[field].clone();
+                    changed = true;
+                }
+            }
         } else {
             entries.insert(name.clone(), server.clone());
+            changed = true;
         }
     }
-    if *entries != previous {
+    if changed {
         // Preserve an existing link to a custom configuration file.
         let dest = if path.is_symlink() {
             path.canonicalize()?
@@ -123,6 +127,7 @@ fn update(path: &Path, keys: &[&str], wanted: &Map<String, Value>) -> anyhow::Re
 mod tests {
     use super::*;
     use crate::config::McpServer;
+    use std::fs;
 
     fn fixture() -> McpServers {
         McpServers::from([(
