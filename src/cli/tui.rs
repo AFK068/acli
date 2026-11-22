@@ -35,19 +35,24 @@ impl Page {
 
     fn rows(self, path: &Path) -> anyhow::Result<Vec<Row>> {
         let rows = match self {
-            Self::Profiles => storage::load(path)?
-                .profiles
-                .into_iter()
-                .map(|(name, profile)| Row {
-                    name: name.into(),
-                    details: format!("{}  ·  {}", profile.agent, profile.auth),
-                })
-                .collect(),
+            Self::Profiles => {
+                let config = storage::load(path)?;
+                config
+                    .profiles
+                    .into_iter()
+                    .map(|(name, profile)| Row {
+                        is_default: config.default_profile.as_deref() == Some(name.as_str()),
+                        name: name.into(),
+                        details: format!("{}  ·  {}", profile.agent, profile.auth),
+                    })
+                    .collect()
+            }
             Self::Skills => skills::list(path)?
                 .into_iter()
                 .map(|name| Row {
                     name,
                     details: String::new(),
+                    is_default: false,
                 })
                 .collect(),
             Self::Mcp => mcp::list(path)?
@@ -55,6 +60,7 @@ impl Page {
                 .map(|(name, server)| Row {
                     name: name.into(),
                     details: server.command,
+                    is_default: false,
                 })
                 .collect(),
         };
@@ -102,11 +108,13 @@ impl Page {
 struct Row {
     name: OsString,
     details: String,
+    is_default: bool,
 }
 
 enum Action {
     Add,
     Run(OsString),
+    SetDefault(OsString),
     Rename(OsString),
     Remove(OsString),
 }
@@ -151,6 +159,11 @@ fn perform(path: &Path, page: Page, action: Action) -> anyhow::Result<String> {
             let status = run_agent::wait(path, &name)?;
             return Ok(format!("{name}: {status}"));
         }
+        Action::SetDefault(selected) => {
+            let name = name(selected)?;
+            storage::set_default(path, Some(&name))?;
+            return Ok(format!("Default profile set to '{name}'"));
+        }
         Action::Rename(selected) => {
             let name = name(selected)?;
             let new_name: String = Input::new()
@@ -183,11 +196,11 @@ fn choose(
             Ok(rows) => (rows, clean(message)),
             Err(error) => (Vec::new(), clean(&format!("{error:#}"))),
         };
-        selection.select(
-            rows.len()
-                .checked_sub(1)
-                .map(|last| selection.selected().unwrap_or(0).min(last)),
-        );
+        let selected = selection
+            .selected()
+            .or_else(|| rows.iter().position(|row| row.is_default))
+            .unwrap_or(0);
+        selection.select(rows.len().checked_sub(1).map(|last| selected.min(last)));
         let mut items: Vec<_> = rows
             .iter()
             .map(|row| {
@@ -195,7 +208,8 @@ fn choose(
                 if row.details.is_empty() {
                     name
                 } else {
-                    format!("{}    {}", name, clean(&row.details))
+                    let marker = if row.is_default { "* " } else { "" };
+                    format!("{marker}{name}    {}", clean(&row.details))
                 }
             })
             .collect();
@@ -203,7 +217,7 @@ fn choose(
             items.push("No entries".into());
         }
         let hints = if page == Page::Profiles {
-            "Tab: switch  ↑↓: select  Enter: run  a: add  r: rename  d: remove  q: quit"
+            "Tab: switch  ↑↓: select  Enter: run  s: set default  a: add  r: rename  d: remove  q: quit"
         } else {
             "Tab: switch  ↑↓: select  a: add  d: remove  q: quit"
         };
@@ -272,6 +286,9 @@ fn choose(
                 }
                 (KeyCode::Enter, Some(row)) if page == Page::Profiles => {
                     return Ok(Some(Action::Run(row.name.clone())));
+                }
+                (KeyCode::Char('s'), Some(row)) if page == Page::Profiles => {
+                    return Ok(Some(Action::SetDefault(row.name.clone())));
                 }
                 (KeyCode::Char('r'), Some(row)) if page == Page::Profiles => {
                     return Ok(Some(Action::Rename(row.name.clone())));
