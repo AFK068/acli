@@ -1,4 +1,8 @@
-use super::{ProfileCommand, mcp, run_agent, skills};
+use super::{
+    ProfileCommand,
+    list_profiles::{profile_row, profile_table},
+    mcp, run_agent, skills,
+};
 use crate::config::storage;
 use dialoguer::{Confirm, Input};
 use ratatui::crossterm::{
@@ -10,8 +14,9 @@ use ratatui::{
     DefaultTerminal, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Layout},
-    style::{Color, Stylize},
-    widgets::{Block, List, ListState, Paragraph, Tabs, Wrap},
+    style::{Color, Modifier, Style, Stylize},
+    text::Line,
+    widgets::{Block, HighlightSpacing, Paragraph, Row, Table, TableState, Tabs, Wrap},
 };
 use std::{
     ffi::OsString,
@@ -33,38 +38,54 @@ impl Page {
         (Self::Mcp, "MCP"),
     ];
 
-    fn rows(self, path: &Path) -> anyhow::Result<Vec<Row>> {
+    fn entries(self, path: &Path) -> anyhow::Result<Vec<Entry>> {
         let rows = match self {
             Self::Profiles => {
                 let config = storage::load(path)?;
                 config
                     .profiles
                     .into_iter()
-                    .map(|(name, profile)| Row {
-                        is_default: config.default_profile.as_deref() == Some(name.as_str()),
-                        name: name.into(),
-                        details: format!("{}  ·  {}", profile.agent, profile.auth),
+                    .map(|(name, profile)| {
+                        let is_default = config.default_profile.as_deref() == Some(name.as_str());
+                        Entry {
+                            row: profile_row(clean(&name), &profile, is_default),
+                            name: name.into(),
+                            is_default,
+                        }
                     })
                     .collect()
             }
             Self::Skills => skills::list(path)?
                 .into_iter()
-                .map(|name| Row {
+                .map(|name| Entry {
+                    row: Row::new([clean(&name.to_string_lossy())]),
                     name,
-                    details: String::new(),
                     is_default: false,
                 })
                 .collect(),
             Self::Mcp => mcp::list(path)?
                 .into_iter()
-                .map(|(name, server)| Row {
+                .map(|(name, server)| Entry {
+                    row: Row::new([clean(&name), clean(&server.command)]),
                     name: name.into(),
-                    details: server.command,
                     is_default: false,
                 })
                 .collect(),
         };
         Ok(rows)
+    }
+
+    fn table(self, entries: &[Entry]) -> Table<'static> {
+        let rows = entries.iter().map(|entry| entry.row.clone());
+        match self {
+            Self::Profiles => profile_table(rows),
+            Self::Skills => Table::new(rows, [Constraint::Fill(1)]),
+            Self::Mcp => Table::new(rows, [Constraint::Fill(2), Constraint::Fill(3)]),
+        }
+        .block(Block::bordered())
+        .highlight_symbol(Line::from("› ".fg(Color::Cyan)))
+        .highlight_spacing(HighlightSpacing::Always)
+        .row_highlight_style(Style::new().add_modifier(Modifier::BOLD))
     }
 
     fn add(self, path: &Path) -> anyhow::Result<()> {
@@ -105,9 +126,9 @@ impl Page {
     }
 }
 
-struct Row {
+struct Entry {
     name: OsString,
-    details: String,
+    row: Row<'static>,
     is_default: bool,
 }
 
@@ -128,7 +149,7 @@ pub(super) fn run(path: &Path) -> anyhow::Result<()> {
     ctrlc::set_handler(|| {})?;
 
     let mut tab = 0;
-    let mut selection = ListState::default();
+    let mut selection = TableState::default();
     let mut notice = String::new();
     while let Some(action) = choose(path, &mut tab, &mut selection, &notice)? {
         notice = match perform(path, Page::TABS[tab].0, action) {
@@ -183,7 +204,7 @@ fn perform(path: &Path, page: Page, action: Action) -> anyhow::Result<String> {
 fn choose(
     path: &Path,
     tab: &mut usize,
-    selection: &mut ListState,
+    selection: &mut TableState,
     notice: &str,
 ) -> anyhow::Result<Option<Action>> {
     let mut screen = Screen(Terminal::new(CrosstermBackend::new(io::stdout()))?);
@@ -192,30 +213,16 @@ fn choose(
     let mut message = notice;
     loop {
         let page = Page::TABS[*tab].0;
-        let (rows, status) = match page.rows(path) {
-            Ok(rows) => (rows, clean(message)),
+        let (entries, status) = match page.entries(path) {
+            Ok(entries) => (entries, clean(message)),
             Err(error) => (Vec::new(), clean(&format!("{error:#}"))),
         };
         let selected = selection
             .selected()
-            .or_else(|| rows.iter().position(|row| row.is_default))
+            .or_else(|| entries.iter().position(|entry| entry.is_default))
             .unwrap_or(0);
-        selection.select(rows.len().checked_sub(1).map(|last| selected.min(last)));
-        let mut items: Vec<_> = rows
-            .iter()
-            .map(|row| {
-                let name = clean(&row.name.to_string_lossy());
-                if row.details.is_empty() {
-                    name
-                } else {
-                    let marker = if row.is_default { "* " } else { "" };
-                    format!("{marker}{name}    {}", clean(&row.details))
-                }
-            })
-            .collect();
-        if items.is_empty() {
-            items.push("No entries".into());
-        }
+        selection.select(entries.len().checked_sub(1).map(|last| selected.min(last)));
+        let table = page.table(&entries);
         let hints = if page == Page::Profiles {
             "Tab: switch  ↑↓: select  Enter: run  s: set default  a: add  r: rename  d: remove  q: quit"
         } else {
@@ -236,11 +243,12 @@ fn choose(
                         .highlight_style(Color::Cyan),
                     tabs,
                 );
-                let list = List::new(items.iter().map(String::as_str))
-                    .block(Block::bordered())
-                    .highlight_symbol("> ")
-                    .highlight_style(Color::Cyan);
-                frame.render_stateful_widget(list, body, selection);
+                if entries.is_empty() {
+                    frame
+                        .render_widget(Paragraph::new("No entries").block(Block::bordered()), body);
+                } else {
+                    frame.render_stateful_widget(&table, body, selection);
+                }
                 frame.render_widget(Paragraph::new(hints).dim().wrap(Wrap { trim: true }), help);
                 frame.render_widget(
                     Paragraph::new(status.as_str()).wrap(Wrap { trim: true }),
@@ -263,7 +271,7 @@ fn choose(
             {
                 continue;
             }
-            let selected = selection.selected().and_then(|index| rows.get(index));
+            let selected = selection.selected().and_then(|index| entries.get(index));
             match (key.code, selected) {
                 (KeyCode::Char('q') | KeyCode::Esc, _) => return Ok(None),
                 (KeyCode::Tab | KeyCode::BackTab, _) => {
@@ -274,7 +282,7 @@ fn choose(
                         count - 1
                     };
                     *tab = (*tab + step) % count;
-                    *selection = ListState::default();
+                    *selection = TableState::default();
                     message = "";
                     break;
                 }

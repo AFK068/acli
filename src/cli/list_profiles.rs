@@ -1,5 +1,9 @@
 use crate::config::{AuthMode, Config, Profile, storage};
-use ratatui::{style::Stylize, widgets::Widget};
+use ratatui::{
+    layout::Constraint,
+    style::{Color, Stylize},
+    widgets::{Cell, Row, Table, Widget},
+};
 use std::io::{self, IsTerminal, Write};
 
 const TABLE_WIDTH: u16 = 88;
@@ -65,18 +69,13 @@ fn render<B: ratatui::backend::Backend>(
     for chunk in profiles.chunks(ROWS_PER_BLOCK) {
         let rows = chunk.iter().map(|(name, profile)| {
             let is_default = config.default_profile.as_deref() == Some(name.as_str());
-            profile_row(name, profile, is_default)
+            profile_row(name.to_string(), profile, is_default)
         });
-        let widths = [3, 3, 2].map(ratatui::layout::Constraint::Fill);
-        let header = ratatui::widgets::Row::new(["PROFILE", "AGENT", "AUTH"])
-            .bold()
-            .bottom_margin(1);
-        let table = ratatui::widgets::Table::new(rows, widths)
-            .header(header)
-            .column_spacing(2)
-            .block(block.clone());
-
-        insert_widget(terminal, chunk.len() as u16 + 4, table)?;
+        insert_widget(
+            terminal,
+            chunk.len() as u16 + 4,
+            profile_table(rows).block(block.clone()),
+        )?;
     }
 
     Ok(())
@@ -94,24 +93,40 @@ fn insert_widget<B: ratatui::backend::Backend>(
     })
 }
 
-fn profile_row<'a>(
-    name: &'a str,
-    profile: &Profile,
-    is_default: bool,
-) -> ratatui::widgets::Row<'a> {
-    let name = if is_default {
-        ratatui::widgets::Cell::from(format!("* {name}"))
+pub(super) fn profile_table(rows: impl IntoIterator<Item = Row<'static>>) -> Table<'static> {
+    Table::new(
+        rows,
+        [
+            Constraint::Fill(3),
+            Constraint::Fill(2),
+            Constraint::Length(6),
+            Constraint::Length(9),
+        ],
+    )
+    .header(
+        Row::new(["Profile", "Agent", "Auth", ""])
+            .dim()
+            .bottom_margin(1),
+    )
+    .column_spacing(2)
+}
+
+pub(super) fn profile_row(name: String, profile: &Profile, is_default: bool) -> Row<'static> {
+    let default = if is_default {
+        Cell::from(" Default ").fg(Color::Black).bg(Color::Cyan)
     } else {
-        ratatui::widgets::Cell::from(name)
+        Cell::default()
     };
-    let color = match profile.auth {
-        AuthMode::Native => ratatui::style::Color::Magenta,
-        AuthMode::Api => ratatui::style::Color::Cyan,
+    let auth = Cell::from(profile.auth.to_string());
+    let auth = match profile.auth {
+        AuthMode::Native => auth,
+        AuthMode::Api => auth.fg(Color::Cyan),
     };
-    ratatui::widgets::Row::new([
-        name.bold(),
-        ratatui::widgets::Cell::from(profile.agent.to_string()),
-        ratatui::widgets::Cell::from(profile.auth.to_string()).fg(color),
+    Row::new([
+        Cell::from(name).bold(),
+        Cell::from(profile.agent.to_string()),
+        auth,
+        default,
     ])
 }
 
@@ -142,7 +157,7 @@ mod tests {
             );
         }
         let output = render_profiles(&config)?;
-        for heading in ["PROFILE", "AGENT", "AUTH"] {
+        for heading in ["Profile", "Agent", "Auth"] {
             assert!(output.contains(heading));
         }
         for name in config.profiles.keys() {
