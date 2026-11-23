@@ -11,3 +11,7 @@
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-2563EB?style=flat-square"></a>
   <a href="https://github.com/AFK068/acli/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/AFK068/acli/ci.yml?branch=main&amp;event=push&amp;label=build&amp;style=flat-square"></a>
 </p>
+
+<p align="center">
+  <a href="assets/acli-preview.mp4"><img src="assets/acli-preview.webp" alt="acli demo showing profile creation, OpenCode, shared skills, and MCP servers" width="880"></a>
+</p>
